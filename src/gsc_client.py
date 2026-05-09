@@ -1,8 +1,7 @@
-import json
 import os
 from datetime import date, timedelta
 
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 
@@ -10,9 +9,14 @@ SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 
 def _build_service():
-    sa_json = os.environ["GSC_SERVICE_ACCOUNT_JSON"]
-    info = json.loads(sa_json)
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    creds = Credentials(
+        token=None,
+        refresh_token=os.environ["GSC_REFRESH_TOKEN"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ["GSC_CLIENT_ID"],
+        client_secret=os.environ["GSC_CLIENT_SECRET"],
+        scopes=SCOPES,
+    )
     return build("searchconsole", "v1", credentials=creds)
 
 
