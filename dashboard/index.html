@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEO順位ウォッチ | GreenSnap</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f5f7f2; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .badge-critical { background: #fee2e2; color: #dc2626; }
+  .badge-warning  { background: #fef9c3; color: #ca8a04; }
+  .badge-watch    { background: #dbeafe; color: #2563eb; }
+  .badge-good     { background: #dcfce7; color: #16a34a; }
+  .trend-up   { color: #16a34a; }
+  .trend-down { color: #dc2626; }
+  .trend-flat { color: #9ca3af; }
+  .sidebar-link { transition: all 0.15s; border-radius: 8px; }
+  .sidebar-link:hover, .sidebar-link.active { background: #f0fdf4; color: #16a34a; }
+  .tab-btn { border-bottom: 2px solid transparent; padding: 4px 12px; cursor: pointer; }
+  .tab-btn.active { border-color: #16a34a; color: #16a34a; font-weight: 600; }
+  .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 6px; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .spinning { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Sidebar -->
+<div class="fixed left-0 top-0 h-full w-56 bg-white border-r border-gray-100 flex flex-col p-4 z-20">
+  <div class="flex items-center gap-2 mb-8 px-2">
+    <span class="text-2xl">🌱</span>
+    <div>
+      <div class="font-bold text-gray-800 text-sm">SEO順位ウォッチ</div>
+      <div class="text-xs text-gray-400">GreenSnap STORE</div>
+    </div>
+  </div>
+  <nav class="flex flex-col gap-1 text-sm text-gray-600">
+    <a href="#top"     class="sidebar-link active flex items-center gap-2 px-3 py-2">📊 ダッシュボード</a>
+    <a href="#alerts"  class="sidebar-link flex items-center gap-2 px-3 py-2">🔴 要対策記事</a>
+    <a href="#trend"   class="sidebar-link flex items-center gap-2 px-3 py-2">📈 順位トレンド</a>
+    <a href="#recs"    class="sidebar-link flex items-center gap-2 px-3 py-2">✍️ 記事レコメンド</a>
+    <a href="#season"  class="sidebar-link flex items-center gap-2 px-3 py-2">🗓️ シーズン</a>
+  </nav>
+  <div class="mt-auto px-3 py-2 text-xs text-gray-400" id="last-updated">読み込み中...</div>
+</div>
+
+<!-- Main -->
+<div class="ml-56 p-6" id="top">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-gray-800">ダッシュボード</h1>
+      <p class="text-sm text-gray-500" id="header-period">読み込み中...</p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="runBatch()" id="run-btn"
+        class="text-sm px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1">
+        🔄 今すぐ実行
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-4 gap-4 mb-6">
+    <div class="card p-4">
+      <div class="text-xs text-gray-500 mb-1">監視記事数</div>
+      <div class="text-2xl font-bold text-gray-800" id="kpi-total">—</div>
+    </div>
+    <div class="card p-4">
+      <div class="text-xs text-gray-500 mb-1">要対策（ピーク期×下落）</div>
+      <div class="text-2xl font-bold text-red-500" id="kpi-critical">—</div>
+    </div>
+    <div class="card p-4">
+      <div class="text-xs text-gray-500 mb-1">順位UP ↑</div>
+      <div class="text-2xl font-bold text-green-500" id="kpi-improved">—</div>
+    </div>
+    <div class="card p-4">
+      <div class="text-xs text-gray-500 mb-1">順位DOWN ↓</div>
+      <div class="text-2xl font-bold text-gray-600" id="kpi-declined">—</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-3 gap-6 mb-6" id="alerts">
+
+    <!-- Alert List -->
+    <div class="col-span-2 card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-gray-800">アラート一覧</h2>
+        <div class="flex gap-1 text-xs" id="tab-bar">
+          <button class="tab-btn active" onclick="switchTab('all',this)">すべて</button>
+          <button class="tab-btn text-gray-500" onclick="switchTab('critical',this)">🔴 要対策</button>
+          <button class="tab-btn text-gray-500" onclick="switchTab('warning',this)">🟡 要監視</button>
+          <button class="tab-btn text-gray-500" onclick="switchTab('watch',this)">🔵 事前対策</button>
+        </div>
+      </div>
+      <div id="alert-list" class="space-y-3">
+        <div class="skeleton h-20 w-full"></div>
+        <div class="skeleton h-20 w-full"></div>
+        <div class="skeleton h-20 w-full"></div>
+      </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="flex flex-col gap-4">
+      <!-- Season -->
+      <div class="card p-5" id="season">
+        <h2 class="font-semibold text-gray-800 mb-3">🗓️ 今月の需要ピーク記事</h2>
+        <div id="season-list" class="space-y-2">
+          <div class="skeleton h-5 w-full"></div>
+          <div class="skeleton h-5 w-full"></div>
+          <div class="skeleton h-5 w-full"></div>
+        </div>
+      </div>
+      <!-- Top5 -->
+      <div class="card p-5">
+        <h2 class="font-semibold text-gray-800 mb-3">📈 表示回数 Top5</h2>
+        <div id="top5-list" class="space-y-2.5">
+          <div class="skeleton h-8 w-full"></div>
+          <div class="skeleton h-8 w-full"></div>
+          <div class="skeleton h-8 w-full"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="card p-5 mb-6" id="recs">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-semibold text-gray-800">✍️ 新規記事作成レコメンド</h2>
+        <p class="text-xs text-gray-500 mt-0.5">表示回数多いが順位低い（15位以下）検索ワードから生成</p>
+      </div>
+      <span class="text-xs text-gray-400" id="rec-count"></span>
+    </div>
+    <div id="rec-list" class="grid grid-cols-2 gap-3">
+      <div class="skeleton h-28 w-full rounded-xl"></div>
+      <div class="skeleton h-28 w-full rounded-xl"></div>
+    </div>
+  </div>
+
+  <!-- Trend Chart -->
+  <div class="card p-5" id="trend">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-800">📊 週次トレンド（表示回数 Top5記事）</h2>
+      <select id="weeks-select" onchange="loadTrend()" class="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600">
+        <option value="12">過去12週</option>
+        <option value="26">過去26週</option>
+        <option value="52">過去52週</option>
+      </select>
+    </div>
+    <canvas id="trendChart" height="80"></canvas>
+  </div>
+
+</div>
+
+<script>
+let allAlerts = { critical: [], warning: [], watch: [] };
+let trendChart = null;
+
+// ── ユーティリティ ──────────────────────────────────────────────────────────
+
+function positionBadge(pos) {
+  if (pos <= 5)  return `<span class="text-xs badge-good px-2 py-0.5 rounded-full">${pos}位 ✓</span>`;
+  if (pos <= 10) return `<span class="text-xs badge-warning px-2 py-0.5 rounded-full">${pos}位 △</span>`;
+  return             `<span class="text-xs badge-critical px-2 py-0.5 rounded-full">${pos}位 !</span>`;
+}
+
+function diffLabel(diff) {
+  if (diff > 0.5)  return `<span class="trend-down text-xs font-medium">↓${diff}位</span>`;
+  if (diff < -0.5) return `<span class="trend-up text-xs font-medium">↑${Math.abs(diff)}位</span>`;
+  return                  `<span class="trend-flat text-xs">→ 変化なし</span>`;
+}
+
+function shortLabel(url) {
+  return url.replace('https://greensnap.co.jp/columns/', '').replace(/\/$/, '');
+}
+
+// ── アラートカード ──────────────────────────────────────────────────────────
+
+function renderAlertItem(a, type) {
+  const colorMap = {
+    critical: { bg: 'bg-red-50 border-red-100', badge: 'badge-critical', label: '要対策', btnBorder: 'border-red-200 text-red-600 hover:bg-red-100' },
+    warning:  { bg: 'bg-yellow-50 border-yellow-100', badge: 'badge-warning', label: '要監視', btnBorder: 'border-yellow-200 text-yellow-700 hover:bg-yellow-100' },
+    watch:    { bg: 'bg-blue-50 border-blue-100', badge: 'badge-watch', label: '事前対策', btnBorder: 'border-blue-200 text-blue-600 hover:bg-blue-100' },
+  };
+  const c = colorMap[type];
+  const impStr = a.impression_change_rate != null
+    ? `<span class="text-gray-500">表示回数 ${a.impression_change_rate > 0 ? '+' : ''}${a.impression_change_rate}%</span>` : '';
+  const pvStr = a.estimated_pv_loss > 0
+    ? `<span class="text-red-500">推定損失 約${a.estimated_pv_loss.toLocaleString()}PV/月</span>` : '';
+  return `
+    <div class="flex items-start gap-3 p-3 rounded-lg border ${c.bg}">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-xs font-medium ${c.badge} px-2 py-0.5 rounded-full">${c.label}</span>
+        </div>
+        <a href="${a.page_url}" target="_blank"
+           class="text-sm font-medium text-gray-800 hover:underline truncate block">${shortLabel(a.page_url)}</a>
+        <div class="flex flex-wrap gap-3 mt-1.5 text-xs items-center">
+          ${diffLabel(a.position_diff)}
+          <span class="text-gray-400">${a.prev_position}位 → ${a.cur_position}位</span>
+          ${impStr} ${pvStr}
+        </div>
+      </div>
+    </div>`;
+}
+
+function switchTab(type, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAlerts(type);
+}
+
+function renderAlerts(type = 'all') {
+  const el = document.getElementById('alert-list');
+  let items = [];
+  if (type === 'all' || type === 'critical') items.push(...allAlerts.critical.map(a => renderAlertItem(a, 'critical')));
+  if (type === 'all' || type === 'warning')  items.push(...allAlerts.warning.map(a => renderAlertItem(a, 'warning')));
+  if (type === 'all' || type === 'watch')    items.push(...allAlerts.watch.map(a => renderAlertItem(a, 'watch')));
+  if (items.length === 0) {
+    el.innerHTML = '<div class="text-sm text-gray-400 text-center py-8">✅ 対象記事はありません</div>';
+  } else {
+    el.innerHTML = items.join('');
+  }
+}
+
+// ── データ読み込み ─────────────────────────────────────────────────────────
+
+async function loadSummary() {
+  const res = await fetch('/api/summary');
+  if (!res.ok) { document.getElementById('alert-list').innerHTML = '<div class="text-red-500 text-sm p-4">データ取得に失敗しました</div>'; return; }
+  const data = await res.json();
+  const s = data.summary;
+
+  document.getElementById('header-period').textContent = `${data.snapshot_date} 週 | 前年同週比`;
+  document.getElementById('last-updated').textContent   = `最終更新: ${data.snapshot_date}`;
+  document.getElementById('kpi-total').textContent      = `${s.total}件`;
+  document.getElementById('kpi-critical').textContent   = `${data.alerts.critical.length}件`;
+  document.getElementById('kpi-improved').textContent   = `${s.improved}件`;
+  document.getElementById('kpi-declined').textContent   = `${s.declined}件`;
+
+  allAlerts = data.alerts;
+  renderAlerts('all');
+
+  // Top5
+  const top5 = (s.top_articles || []).slice(0, 5);
+  document.getElementById('top5-list').innerHTML = top5.map((a, i) => `
+    <div class="flex items-center gap-2 text-xs">
+      <span class="text-gray-400 w-4">${i + 1}</span>
+      <div class="flex-1 min-w-0">
+        <div class="text-gray-700 truncate">${shortLabel(a.page_url)}</div>
+        <div class="text-gray-400">${a.cur_impressions.toLocaleString()}回</div>
+      </div>
+      ${diffLabel(a.position_diff)}
+    </div>`).join('');
+}
+
+async function loadSeason() {
+  const month = new Date().getMonth() + 1;
+  const res = await fetch(`/api/season?month=${month}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  const articles = data.articles || [];
+  document.getElementById('season-list').innerHTML = articles.length === 0
+    ? '<div class="text-xs text-gray-400">データなし</div>'
+    : articles.slice(0, 6).map(a => `
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-700 truncate max-w-[160px]">${a.label || a.page_url}</span>
+          ${positionBadge(a.avg_position)}
+        </div>`).join('');
+}
+
+async function loadRecommendations() {
+  const res = await fetch('/api/recommendations');
+  if (!res.ok) return;
+  const recs = await res.json();
+  document.getElementById('rec-count').textContent = `今週 ${recs.length}件`;
+  if (recs.length === 0) {
+    document.getElementById('rec-list').innerHTML = '<div class="text-sm text-gray-400 col-span-2 text-center py-6">レコメンドがありません</div>';
+    return;
+  }
+  document.getElementById('rec-list').innerHTML = recs.slice(0, 6).map(r => {
+    const posClass = r.avg_position >= 20 ? 'badge-critical' : 'badge-warning';
+    const related = r.related_queries.slice(0, 2).map(q =>
+      `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${q}</span>`).join('');
+    return `
+      <div class="border border-gray-100 rounded-xl p-4 hover:border-green-200 hover:bg-green-50 transition-all">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="text-sm font-medium text-gray-800 leading-snug">${r.suggested_title}</div>
+          <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap">${r.avg_position}位</span>
+        </div>
+        <div class="text-xs text-gray-500 mb-2">検索ワード: <span class="font-medium text-gray-700">${r.main_query}</span></div>
+        <div class="flex flex-wrap gap-1 mb-3">${related}</div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-500">表示回数 <span class="font-medium text-gray-700">${r.total_impressions.toLocaleString()}回</span>/週</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadTrend() {
+  const weeks = document.getElementById('weeks-select').value;
+  const res = await fetch(`/api/trend?weeks=${weeks}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  const colors = ['#6366f1','#16a34a','#dc2626','#f59e0b','#06b6d4'];
+  const datasets = data.datasets.map((d, i) => ({
+    ...d,
+    borderColor: colors[i % colors.length],
+    backgroundColor: colors[i % colors.length] + '10',
+    tension: 0.4, fill: true, pointRadius: 2,
+  }));
+  if (trendChart) trendChart.destroy();
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: data.labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 12 } },
+      }
+    }
+  });
+}
+
+// ── 手動実行 ───────────────────────────────────────────────────────────────
+
+async function runBatch() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinning">🔄</span> 実行中...';
+  try {
+    const res = await fetch('/api/run', { method: 'POST' });
+    const data = await res.json();
+    btn.innerHTML = '✅ 開始しました';
+    setTimeout(() => {
+      btn.innerHTML = '🔄 今すぐ実行';
+      btn.disabled = false;
+      loadAll();
+    }, 8000);
+  } catch(e) {
+    btn.innerHTML = '❌ エラー';
+    btn.disabled = false;
+  }
+}
+
+// ── 初期化 ────────────────────────────────────────────────────────────────
+
+function loadAll() {
+  loadSummary();
+  loadSeason();
+  loadRecommendations();
+  loadTrend();
+}
+
+loadAll();
+</script>
+</body>
+</html>
