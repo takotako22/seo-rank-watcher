@@ -278,10 +278,37 @@ def _trigger_run(background_tasks: BackgroundTasks):
 
 @app.post("/api/run")
 def api_run_post(background_tasks: BackgroundTasks):
-    """週次バッチを手動トリガー（POST）。"""
     return _trigger_run(background_tasks)
 
 @app.get("/api/run")
 def api_run_get(background_tasks: BackgroundTasks):
-    """週次バッチを手動トリガー（GET・ブラウザから直接叩ける）。"""
     return _trigger_run(background_tasks)
+
+@app.get("/api/run/debug")
+def api_run_debug():
+    """バッチを同期実行してエラーを直接返す（デバッグ用）。"""
+    import traceback
+    import io, sys
+    log_buffer = io.StringIO()
+
+    class TeeStream:
+        def write(self, msg):
+            log_buffer.write(msg)
+            sys.__stdout__.write(msg)
+        def flush(self):
+            sys.__stdout__.flush()
+
+    sys.stdout = TeeStream()
+    try:
+        from .main import run_weekly
+        run_weekly()
+        sys.stdout = sys.__stdout__
+        return {"status": "ok", "log": log_buffer.getvalue()}
+    except Exception as e:
+        sys.stdout = sys.__stdout__
+        return JSONResponse({
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "log": log_buffer.getvalue(),
+        }, status_code=500)
