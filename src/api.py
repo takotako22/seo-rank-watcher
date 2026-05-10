@@ -277,13 +277,61 @@ def _trigger_run(background_tasks: BackgroundTasks):
     return {"status": "started", "message": "週次バッチを開始しました"}
 
 @app.get("/api/backfill")
-def api_backfill(background_tasks: BackgroundTasks, months: int = 16):
-    """過去データ取り込みをバックグラウンドで実行する。"""
-    def _run():
-        from .backfill import run_backfill
-        run_backfill(SITE_URL, URL_PREFIX, months_back=months)
-    background_tasks.add_task(_run)
-    return {"status": "started", "message": f"過去{months}ヶ月分の取り込みを開始しました（数分かかります）"}
+def api_backfill(months: int = 16, chunk: int = 5):
+    """
+    過去データを chunk 週ずつ同期実行する。
+    未取得の週だけ処理するので何度呼んでもOK。
+    全部終わるまでブラウザで繰り返し叩いてください。
+    """
+    import time
+    from datetime import date, timedelta
+    from .gsc_client import fetch_page_stats
+    from .db import upsert_snapshots
+
+    # 取得済み週を確認
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT snapshot_date FROM rank_snapshots GROUP BY snapshot_date")
+            done_dates = {row[0] for row in cur.fetchall()}
+
+    # 対象週を計算
+    today = date.today()
+    cutoff = today - timedelta(days=3)
+    days_since_sunday = (cutoff.weekday() + 1) % 7
+    latest_sunday = cutoff - timedelta(days=days_since_sunday)
+    earliest = today - timedelta(days=30 * months)
+
+    pending = []
+    sunday = latest_sunday
+    while sunday >= earliest:
+        monday = sunday - timedelta(days=6)
+        if monday not in done_dates:
+            pending.append((monday, sunday))
+        sunday -= timedelta(days=7)
+
+    if not pending:
+        return {"status": "done", "message": "すべての週の取り込みが完了しています", "remaining": 0}
+
+    # chunk 週だけ処理
+    targets = pending[:chunk]
+    saved, errors = [], []
+    for monday, sunday in targets:
+        try:
+            rows = fetch_page_stats(SITE_URL, monday, sunday, URL_PREFIX)
+            if rows:
+                upsert_snapshots(rows, monday)
+                saved.append({"week": str(monday), "rows": len(rows)})
+            time.sleep(0.3)
+        except Exception as e:
+            errors.append({"week": str(monday), "error": str(e)})
+
+    return {
+        "status": "in_progress",
+        "saved_this_call": saved,
+        "errors": errors,
+        "remaining_weeks": len(pending) - len(targets),
+        "message": f"残り {len(pending) - len(targets)} 週。このURLを引き続き叩いてください。",
+    }
 
 
 @app.get("/api/backfill/status")
