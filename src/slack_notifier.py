@@ -9,6 +9,38 @@ WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 MAX_ITEMS_PER_SECTION = 5
 
 
+def _format_summary(summary: dict) -> str:
+    if not summary:
+        return ""
+    total = summary["total"]
+    improved = summary["improved"]
+    declined = summary["declined"]
+    unchanged = summary["unchanged"]
+
+    lines = [
+        f"監視記事数: *{total}件*　｜　"
+        f"順位UP ↑ *{improved}件*　順位DOWN ↓ *{declined}件*　変化なし *{unchanged}件*（前年同週比）",
+        "",
+        "*表示回数 Top10（前年同週比）*",
+    ]
+    for i, a in enumerate(summary.get("top_articles", []), 1):
+        diff = a["position_diff"]
+        if diff < -0.5:
+            icon = "↑"
+            diff_str = f"+{abs(diff):.1f}位"
+        elif diff > 0.5:
+            icon = "↓"
+            diff_str = f"-{abs(diff):.1f}位"
+        else:
+            icon = "→"
+            diff_str = "変化なし"
+        url_short = a["page_url"].replace("https://greensnap.co.jp/columns/", "").rstrip("/")[:30]
+        lines.append(
+            f"{i}. {icon} `{a['cur_position']:.1f}位` {diff_str}　{url_short}"
+        )
+    return "\n".join(lines)
+
+
 def _format_item(item: AlertItem) -> str:
     direction = "↓" if item.position_diff > 0 else "↑"
     pos_label = f"{item.prev_position:.1f}位 → {item.cur_position:.1f}位 ({direction}{abs(item.position_diff):.1f}位)"
@@ -28,6 +60,7 @@ def _format_item(item: AlertItem) -> str:
 def build_payload(
     alerts: dict[str, list[AlertItem]],
     snapshot_date: date,
+    summary: dict | None = None,
 ) -> dict:
     critical = alerts.get("critical", [])
     warning = alerts.get("warning", [])
@@ -102,6 +135,21 @@ def build_payload(
             }
         )
 
+    # 全体サマリー
+    if summary:
+        summary_text = _format_summary(summary)
+        if summary_text:
+            blocks.append({"type": "divider"})
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*📊 全体チェック結果*\n{summary_text}",
+                    },
+                }
+            )
+
     blocks.append({"type": "divider"})
     blocks.append(
         {
@@ -118,9 +166,9 @@ def build_payload(
     return {"blocks": blocks}
 
 
-def send(alerts: dict[str, list[AlertItem]], snapshot_date: date):
+def send(alerts: dict[str, list[AlertItem]], snapshot_date: date, summary: dict | None = None):
     if not WEBHOOK_URL:
         raise ValueError("SLACK_WEBHOOK_URL が設定されていません")
-    payload = build_payload(alerts, snapshot_date)
+    payload = build_payload(alerts, snapshot_date, summary)
     resp = requests.post(WEBHOOK_URL, json=payload, timeout=10)
     resp.raise_for_status()

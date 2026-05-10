@@ -16,7 +16,7 @@ load_dotenv()
 
 from .db import run_migrations, upsert_snapshots, fetch_yoy_pairs, fetch_peak_months
 from .gsc_client import fetch_last_week_stats
-from .analyzer import analyze
+from .analyzer import analyze, build_summary
 from .slack_notifier import send
 from .season_estimator import estimate_and_save
 
@@ -46,14 +46,16 @@ def run_weekly():
 
     print("5. 変動分析中...")
     alerts = analyze(yoy_pairs, start_date, peak_months_map)
+    summary = build_summary(yoy_pairs)
     print(
         f"   critical={len(alerts['critical'])}, "
         f"warning={len(alerts['warning'])}, "
-        f"watch={len(alerts['watch'])}"
+        f"watch={len(alerts['watch'])}, "
+        f"total={summary.get('total', 0)}"
     )
 
     print("6. Slack通知送信中...")
-    send(alerts, start_date)
+    send(alerts, start_date, summary)
     print("=== 完了 ===")
 
 

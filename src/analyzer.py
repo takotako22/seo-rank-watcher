@@ -105,6 +105,41 @@ def analyze(
     return {"critical": critical, "warning": warning, "watch": watch}
 
 
+def build_summary(yoy_pairs: list[dict]) -> dict:
+    """全体チェック結果のサマリーを生成する。"""
+    pairs_with_prev = [p for p in yoy_pairs if p.get("prev_position") is not None]
+    if not pairs_with_prev:
+        return {}
+
+    total = len(pairs_with_prev)
+    improved = sum(1 for p in pairs_with_prev if float(p["cur_position"] or 0) < float(p["prev_position"] or 0))
+    declined = sum(1 for p in pairs_with_prev if float(p["cur_position"] or 0) > float(p["prev_position"] or 0))
+    unchanged = total - improved - declined
+
+    # 表示回数Top10を順位変動付きで返す
+    top_articles = sorted(pairs_with_prev, key=lambda x: x["cur_impressions"], reverse=True)[:10]
+    top_list = []
+    for p in top_articles:
+        cur_pos = float(p["cur_position"] or 0)
+        prev_pos = float(p["prev_position"] or 0)
+        diff = cur_pos - prev_pos
+        top_list.append({
+            "page_url": p["page_url"],
+            "cur_position": cur_pos,
+            "prev_position": prev_pos,
+            "position_diff": diff,
+            "cur_impressions": int(p["cur_impressions"] or 0),
+        })
+
+    return {
+        "total": total,
+        "improved": improved,
+        "declined": declined,
+        "unchanged": unchanged,
+        "top_articles": top_list,
+    }
+
+
 def infer_peak_months(page_url: str, monthly_impressions: dict[int, int]) -> list[int]:
     """月別表示回数からピーク月を推定する（平均+1σ超を採用）。"""
     if not monthly_impressions:
