@@ -19,6 +19,7 @@ from .gsc_client import fetch_last_week_stats
 from .analyzer import analyze, build_summary
 from .slack_notifier import send
 from .season_estimator import estimate_and_save
+from .recommender import fetch_recommendations
 
 
 SITE_URL = os.environ["GSC_SITE_URL"]
@@ -54,8 +55,12 @@ def run_weekly():
         f"total={summary.get('total', 0)}"
     )
 
-    print("6. Slack通知送信中...")
-    send(alerts, start_date, summary)
+    print("6. 記事作成レコメンド生成中...")
+    recommendations = fetch_recommendations(SITE_URL, URL_PREFIX, start_date, end_date)
+    print(f"   レコメンド件数: {len(recommendations)}")
+
+    print("7. Slack通知送信中...")
+    send(alerts, start_date, summary, recommendations)
     print("=== 完了 ===")
 
 

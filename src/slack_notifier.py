@@ -4,6 +4,7 @@ from datetime import date
 import requests
 
 from .analyzer import AlertItem
+from .recommender import ArticleRecommendation
 
 WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 MAX_ITEMS_PER_SECTION = 5
@@ -57,10 +58,23 @@ def _format_item(item: AlertItem) -> str:
     return "\n".join(lines)
 
 
+def _format_recommendations(recs: list[ArticleRecommendation]) -> str:
+    lines = []
+    for i, r in enumerate(recs, 1):
+        related = "・".join(r.related_queries) if r.related_queries else ""
+        related_str = f"\n  　関連: {related}" if related else ""
+        lines.append(
+            f"{i}. 📝 *{r.suggested_title}*\n"
+            f"  　検索ワード: `{r.main_query}`　表示回数: {r.total_impressions:,}回　平均順位: {r.avg_position:.1f}位{related_str}"
+        )
+    return "\n".join(lines)
+
+
 def build_payload(
     alerts: dict[str, list[AlertItem]],
     snapshot_date: date,
     summary: dict | None = None,
+    recommendations: list[ArticleRecommendation] | None = None,
 ) -> dict:
     critical = alerts.get("critical", [])
     warning = alerts.get("warning", [])
@@ -150,6 +164,20 @@ def build_payload(
                 }
             )
 
+    # 記事作成レコメンド
+    if recommendations:
+        rec_text = _format_recommendations(recommendations)
+        blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*✍️ 新規記事作成レコメンド（需要あり・コンテンツ弱）*\n{rec_text}",
+                },
+            }
+        )
+
     blocks.append({"type": "divider"})
     blocks.append(
         {
@@ -166,9 +194,14 @@ def build_payload(
     return {"blocks": blocks}
 
 
-def send(alerts: dict[str, list[AlertItem]], snapshot_date: date, summary: dict | None = None):
+def send(
+    alerts: dict[str, list[AlertItem]],
+    snapshot_date: date,
+    summary: dict | None = None,
+    recommendations: list[ArticleRecommendation] | None = None,
+):
     if not WEBHOOK_URL:
         raise ValueError("SLACK_WEBHOOK_URL が設定されていません")
-    payload = build_payload(alerts, snapshot_date, summary)
+    payload = build_payload(alerts, snapshot_date, summary, recommendations)
     resp = requests.post(WEBHOOK_URL, json=payload, timeout=10)
     resp.raise_for_status()
