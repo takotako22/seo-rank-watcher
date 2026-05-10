@@ -276,6 +276,39 @@ def _trigger_run(background_tasks: BackgroundTasks):
     background_tasks.add_task(_run)
     return {"status": "started", "message": "週次バッチを開始しました"}
 
+@app.get("/api/backfill")
+def api_backfill(background_tasks: BackgroundTasks, months: int = 16):
+    """過去データ取り込みをバックグラウンドで実行する。"""
+    def _run():
+        from .backfill import run_backfill
+        run_backfill(SITE_URL, URL_PREFIX, months_back=months)
+    background_tasks.add_task(_run)
+    return {"status": "started", "message": f"過去{months}ヶ月分の取り込みを開始しました（数分かかります）"}
+
+
+@app.get("/api/backfill/status")
+def api_backfill_status():
+    """取り込み済み週数・期間をDBから確認する。"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(DISTINCT snapshot_date) AS weeks,
+                    MIN(snapshot_date)            AS oldest,
+                    MAX(snapshot_date)            AS newest,
+                    COUNT(*)                      AS total_rows
+                FROM rank_snapshots
+                WHERE page_url LIKE %s
+            """, (f"{URL_PREFIX}%",))
+            row = cur.fetchone()
+    return {
+        "saved_weeks":  row[0],
+        "oldest_date":  str(row[1]) if row[1] else None,
+        "newest_date":  str(row[2]) if row[2] else None,
+        "total_rows":   row[3],
+    }
+
+
 @app.post("/api/run")
 def api_run_post(background_tasks: BackgroundTasks):
     return _trigger_run(background_tasks)

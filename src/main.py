@@ -20,6 +20,7 @@ from .analyzer import analyze, build_summary
 from .slack_notifier import send
 from .season_estimator import estimate_and_save
 from .recommender import fetch_recommendations
+from .backfill import run_backfill
 
 
 SITE_URL = os.environ["GSC_SITE_URL"]
@@ -84,6 +85,11 @@ if __name__ == "__main__":
         run_seasons()
     elif mode == "migrate":
         run_migrate()
+    elif mode == "backfill":
+        months = int(os.getenv("BACKFILL_MONTHS", "16"))
+        print(f"=== 過去データ取り込み開始（{months}ヶ月分） ===")
+        result = run_backfill(SITE_URL, URL_PREFIX, months_back=months)
+        print(f"結果: {result}")
     else:
         print(f"不明なRUN_MODE: {mode}", file=sys.stderr)
         sys.exit(1)
