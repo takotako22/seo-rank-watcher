@@ -67,11 +67,16 @@ def fetch_page_stats(
 
 
 def fetch_last_week_stats(site_url: str, url_prefix: str) -> tuple[date, date, list[dict]]:
-    """直近完了した月曜〜日曜の週データを取得する。"""
+    """直近完了かつGSCに反映済みの週データを取得する。
+
+    GSCには2〜3日の反映遅延があるため、3日前を基準日として
+    その時点で完了している最新の月〜日曜週を取得する。
+    """
     today = date.today()
-    # 直近の日曜日
-    days_since_sunday = (today.weekday() + 1) % 7
-    last_sunday = today - timedelta(days=days_since_sunday)
+    # 3日前を基準にしてGSC反映済みの週を確実に取得
+    cutoff = today - timedelta(days=3)
+    days_since_sunday = (cutoff.weekday() + 1) % 7
+    last_sunday = cutoff - timedelta(days=days_since_sunday)
     last_monday = last_sunday - timedelta(days=6)
     rows = fetch_page_stats(site_url, last_monday, last_sunday, url_prefix)
     return last_monday, last_sunday, rows
