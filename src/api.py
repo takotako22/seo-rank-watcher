@@ -240,12 +240,19 @@ def api_recommendations():
     ]
 
 
-@app.post("/api/run")
-def api_run(background_tasks: BackgroundTasks):
-    """週次バッチを手動トリガー（非同期実行）。"""
+def _trigger_run(background_tasks: BackgroundTasks):
     def _run():
         from .main import run_weekly
         run_weekly()
-
     background_tasks.add_task(_run)
     return {"status": "started", "message": "週次バッチを開始しました"}
+
+@app.post("/api/run")
+def api_run_post(background_tasks: BackgroundTasks):
+    """週次バッチを手動トリガー（POST）。"""
+    return _trigger_run(background_tasks)
+
+@app.get("/api/run")
+def api_run_get(background_tasks: BackgroundTasks):
+    """週次バッチを手動トリガー（GET・ブラウザから直接叩ける）。"""
+    return _trigger_run(background_tasks)
