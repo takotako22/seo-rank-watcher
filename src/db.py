@@ -104,7 +104,7 @@ def upsert_article_seasons(seasons: list[dict]):
             psycopg2.extras.execute_values(
                 cur,
                 """
-                INSERT INTO article_seasons (page_url, peak_months, updated_at)
+                INSERT INTO article_seasons (page_url, peak_months)
                 VALUES %s
                 ON CONFLICT (page_url) DO UPDATE SET
                     peak_months = EXCLUDED.peak_months,
