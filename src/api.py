@@ -248,7 +248,50 @@ def api_trend(weeks: int = 12):
 @app.get("/api/season")
 def api_season(month: int | None = None):
     m = month or date.today().month
-    return {"month": m, "articles": _season_articles(URL_PREFIX, m)}
+    articles = _season_articles(URL_PREFIX, m)
+    # タイトルを付与
+    from .title_fetcher import get_titles
+    urls = [a["page_url"] for a in articles]
+    titles = get_titles(urls)
+    for a in articles:
+        a["label"] = titles.get(a["page_url"], a["label"])
+    return {"month": m, "articles": articles}
+
+
+@app.get("/api/titles/fetch")
+def api_titles_fetch(background_tasks: BackgroundTasks, limit: int = 100):
+    """未取得URLのタイトルをバックグラウンドでスクレイプする。"""
+    def _run():
+        from .title_fetcher import fetch_titles_for_urls, upsert_titles
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT r.page_url
+                    FROM rank_snapshots r
+                    LEFT JOIN page_titles t ON t.page_url = r.page_url
+                    WHERE t.page_url IS NULL
+                      AND r.page_url LIKE %s
+                    ORDER BY r.page_url
+                    LIMIT %s
+                """, (f"{URL_PREFIX}%", limit))
+                urls = [row[0] for row in cur.fetchall()]
+        if urls:
+            titles = fetch_titles_for_urls(urls)
+            upsert_titles(titles)
+            print(f"タイトル取得完了: {len(titles)}/{len(urls)}件")
+    background_tasks.add_task(_run)
+    return {"status": "started", "message": f"最大{limit}件のタイトル取得を開始しました"}
+
+
+@app.get("/api/titles/status")
+def api_titles_status():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM page_titles")
+            titles_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(DISTINCT page_url) FROM rank_snapshots WHERE page_url LIKE %s", (f"{URL_PREFIX}%",))
+            total_urls = cur.fetchone()[0]
+    return {"fetched": titles_count, "total_urls": total_urls, "remaining": total_urls - titles_count}
 
 
 @app.get("/api/recommendations")

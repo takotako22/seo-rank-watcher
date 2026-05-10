@@ -20,12 +20,16 @@ def get_conn():
 
 
 def run_migrations():
-    migration_path = os.path.join(os.path.dirname(__file__), "../migrations/001_init.sql")
-    with open(migration_path) as f:
-        sql = f.read()
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
+    base = os.path.join(os.path.dirname(__file__), "../migrations")
+    for filename in sorted(os.listdir(base)):
+        if not filename.endswith(".sql"):
+            continue
+        with open(os.path.join(base, filename)) as f:
+            sql = f.read()
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+        print(f"migration applied: {filename}")
 
 
 def upsert_snapshots(rows: list[dict], snapshot_date: date):

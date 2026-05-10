@@ -107,17 +107,23 @@ def analyze(
 
 def build_summary(yoy_pairs: list[dict]) -> dict:
     """全体チェック結果のサマリーを生成する。"""
-    pairs_with_prev = [p for p in yoy_pairs if p.get("prev_position") is not None]
-    if not pairs_with_prev:
-        return {}
+    if not yoy_pairs:
+        return {"total": 0, "improved": 0, "declined": 0, "unchanged": 0, "top_articles": []}
 
-    total = len(pairs_with_prev)
+    # 全記事数（YoYデータがなくても監視件数として表示）
+    all_articles = sorted(yoy_pairs, key=lambda x: x["cur_impressions"] or 0, reverse=True)
+    total_monitored = len(all_articles)
+
+    # YoY比較は前年データがある記事のみ
+    pairs_with_prev = [p for p in yoy_pairs if p.get("prev_position") is not None]
     improved = sum(1 for p in pairs_with_prev if float(p["cur_position"] or 0) < float(p["prev_position"] or 0))
     declined = sum(1 for p in pairs_with_prev if float(p["cur_position"] or 0) > float(p["prev_position"] or 0))
-    unchanged = total - improved - declined
+    unchanged = len(pairs_with_prev) - improved - declined
+
+    total = total_monitored
 
     # 表示回数Top10を順位変動付きで返す
-    top_articles = sorted(pairs_with_prev, key=lambda x: x["cur_impressions"], reverse=True)[:10]
+    top_articles = sorted(pairs_with_prev, key=lambda x: x["cur_impressions"], reverse=True)[:10] if pairs_with_prev else all_articles[:10]
     top_list = []
     for p in top_articles:
         cur_pos = float(p["cur_position"] or 0)
