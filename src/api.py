@@ -284,6 +284,46 @@ def api_run_post(background_tasks: BackgroundTasks):
 def api_run_get(background_tasks: BackgroundTasks):
     return _trigger_run(background_tasks)
 
+@app.get("/api/gsc/debug")
+def api_gsc_debug():
+    """GSC接続・プロパティ・データ取得を診断する。"""
+    import traceback
+    from datetime import date, timedelta
+    from .gsc_client import _build_service
+
+    result = {}
+    try:
+        service = _build_service()
+
+        # 1. 利用可能なプロパティ一覧
+        sites = service.sites().list().execute()
+        result["available_properties"] = [
+            s["siteUrl"] for s in sites.get("siteEntry", [])
+        ]
+
+        # 2. フィルターなしでデータ取得（直近7日）
+        end_date = date.today() - timedelta(days=3)
+        start_date = end_date - timedelta(days=6)
+        resp = service.searchanalytics().query(
+            siteUrl=SITE_URL,
+            body={
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+                "dimensions": ["page"],
+                "rowLimit": 5,
+            }
+        ).execute()
+        result["sample_rows_no_filter"] = resp.get("rows", [])
+        result["date_range"] = f"{start_date} 〜 {end_date}"
+        result["site_url_used"] = SITE_URL
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+
+    return result
+
+
 @app.get("/api/run/debug")
 def api_run_debug():
     """バッチを同期実行してエラーを直接返す（デバッグ用）。"""
