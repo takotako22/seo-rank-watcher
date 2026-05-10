@@ -153,6 +153,35 @@ def _season_articles(url_prefix: str, month: int) -> list[dict]:
             ]
 
 
+# ── 診断エンドポイント ────────────────────────────────────────────────────────
+
+@app.get("/api/health")
+def api_health():
+    """DB接続・テーブルのレコード数・最新スナップショット日付を返す。"""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM rank_snapshots")
+                snapshot_count = cur.fetchone()[0]
+
+                cur.execute("SELECT MAX(snapshot_date) FROM rank_snapshots")
+                latest_date = cur.fetchone()[0]
+
+                cur.execute("SELECT COUNT(*) FROM article_seasons")
+                season_count = cur.fetchone()[0]
+
+        return {
+            "db": "ok",
+            "rank_snapshots_count": snapshot_count,
+            "latest_snapshot_date": str(latest_date) if latest_date else None,
+            "article_seasons_count": season_count,
+            "site_url": SITE_URL,
+            "url_prefix": URL_PREFIX,
+        }
+    except Exception as e:
+        return JSONResponse({"db": "error", "detail": str(e)}, status_code=500)
+
+
 # ── API エンドポイント ────────────────────────────────────────────────────────
 
 @app.get("/api/summary")
