@@ -17,7 +17,6 @@ load_dotenv()
 
 from .db import get_conn, fetch_yoy_pairs, fetch_peak_months
 from .analyzer import analyze, build_summary
-from .recommender import fetch_recommendations
 
 app = FastAPI(title="SEO Rank Watcher")
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
@@ -207,11 +206,27 @@ def api_season(site_id: int = 1, month: int | None = None):
 @app.get("/api/recommendations")
 def api_recommendations(site_id: int = 1):
     site = _get_site_or_404(site_id)
-    today      = date.today()
-    end_date   = today - timedelta(days=3)
-    start_date = end_date - timedelta(days=27)
-    recs = fetch_recommendations(site["gsc_site_url"], site["url_prefix"], start_date, end_date)
-    return [{"main_query": r.main_query, "related_queries": r.related_queries, "avg_position": round(r.avg_position, 1), "total_impressions": r.total_impressions, "suggested_title": r.suggested_title} for r in recs]
+    from .recommender import fetch_rewrite_recommendations
+    result = fetch_rewrite_recommendations(site_id, site["url_prefix"])
+
+    def fmt(r):
+        return {
+            "page_url":        r.page_url,
+            "label":           r.label,
+            "avg_position":    r.avg_position,
+            "impressions":     r.impressions,
+            "ctr":             r.ctr,
+            "pattern":         r.pattern,
+            "position_change": r.position_change,
+            "peak_months":     r.peak_months,
+        }
+
+    return {
+        "ctr_improve": [fmt(r) for r in result["ctr_improve"]],
+        "near_top":    [fmt(r) for r in result["near_top"]],
+        "trending_up": [fmt(r) for r in result["trending_up"]],
+        "pre_season":  [fmt(r) for r in result["pre_season"]],
+    }
 
 
 # ── タイトル取得 ──────────────────────────────────────────────────────────────

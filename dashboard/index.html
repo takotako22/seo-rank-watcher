@@ -143,14 +143,25 @@
   <div class="card p-5 mb-6" id="recs">
     <div class="flex items-center justify-between mb-4">
       <div>
-        <h2 class="font-semibold text-gray-800">✍️ 新規記事作成レコメンド</h2>
-        <p class="text-xs text-gray-500 mt-0.5">表示回数多いが順位低い（15位以下）検索ワードから生成</p>
+        <h2 class="font-semibold text-gray-800">✍️ リライト優先レコメンド</h2>
+        <p class="text-xs text-gray-500 mt-0.5">既存記事の「勝てるパターン」をDBから自動検出</p>
       </div>
       <span class="text-xs text-gray-400" id="rec-count"></span>
     </div>
-    <div id="rec-list" class="grid grid-cols-2 gap-3">
-      <div class="skeleton h-28 w-full rounded-xl"></div>
-      <div class="skeleton h-28 w-full rounded-xl"></div>
+    <!-- タブ -->
+    <div class="flex gap-1 text-xs mb-4 border-b border-gray-100 pb-2" id="rec-tab-bar">
+      <button class="tab-btn active" onclick="switchRecTab('ctr_improve',this)">📈 CTR改善</button>
+      <button class="tab-btn text-gray-500" onclick="switchRecTab('near_top',this)">🎯 上位押し上げ</button>
+      <button class="tab-btn text-gray-500" onclick="switchRecTab('trending_up',this)">⬆️ 上昇トレンド</button>
+      <button class="tab-btn text-gray-500" onclick="switchRecTab('pre_season',this)">🗓️ 来季先行</button>
+    </div>
+    <!-- パターン説明 -->
+    <p class="text-xs text-gray-400 mb-3" id="rec-pattern-desc"></p>
+    <!-- リスト -->
+    <div id="rec-list" class="space-y-2">
+      <div class="skeleton h-10 w-full rounded-lg"></div>
+      <div class="skeleton h-10 w-full rounded-lg"></div>
+      <div class="skeleton h-10 w-full rounded-lg"></div>
     </div>
   </div>
 
@@ -358,30 +369,82 @@ async function loadSeason() {
         </div>`).join('');
 }
 
+let recData = { ctr_improve: [], near_top: [], trending_up: [], pre_season: [] };
+let currentRecTab = 'ctr_improve';
+
+const REC_PATTERN_META = {
+  ctr_improve: {
+    desc: '表示回数100回以上 & CTR2%未満 & 1〜15位 ── タイトルの引きを強化するだけで大きく改善できる記事',
+    emptyMsg: '該当なし（CTR2%以上、または表示回数100未満）',
+  },
+  near_top:    {
+    desc: '現在4〜6位 ── あと1〜2ランク上がれば上位3位・AIO内に入れる記事',
+    emptyMsg: '該当なし（4〜6位の記事なし）',
+  },
+  trending_up: {
+    desc: '直近4週で2位以上改善中 ── 上昇の波に乗って追加テコ入れすると効果が出やすい記事',
+    emptyMsg: '該当なし（4週前比2位以上の改善なし）',
+  },
+  pre_season:  {
+    desc: '来月〜再来月がピーク需要 & 現在10位以下 ── ピーク前に先行して手を打てる記事',
+    emptyMsg: '該当なし（来月〜再来月にピークを持つ記事なし）',
+  },
+};
+
 async function loadRecommendations() {
   const res = await fetch(`/api/recommendations?site_id=${currentSiteId}`);
   if (!res.ok) return;
-  const recs = await res.json();
-  document.getElementById('rec-count').textContent = `今週 ${recs.length}件`;
-  if (recs.length === 0) {
-    document.getElementById('rec-list').innerHTML = '<div class="text-sm text-gray-400 col-span-2 text-center py-6">レコメンドがありません</div>';
+  recData = await res.json();
+  const total = Object.values(recData).reduce((s, arr) => s + arr.length, 0);
+  document.getElementById('rec-count').textContent = `計 ${total}件`;
+  renderRecTab(currentRecTab);
+}
+
+function switchRecTab(tab, btn) {
+  document.querySelectorAll('#rec-tab-bar .tab-btn').forEach(b => {
+    b.classList.remove('active');
+    b.classList.add('text-gray-500');
+  });
+  btn.classList.add('active');
+  btn.classList.remove('text-gray-500');
+  currentRecTab = tab;
+  renderRecTab(tab);
+}
+
+function renderRecTab(tab) {
+  const items = recData[tab] || [];
+  const meta  = REC_PATTERN_META[tab];
+  document.getElementById('rec-pattern-desc').textContent = meta.desc;
+
+  if (items.length === 0) {
+    document.getElementById('rec-list').innerHTML =
+      `<div class="text-sm text-gray-400 text-center py-6">${meta.emptyMsg}</div>`;
     return;
   }
-  document.getElementById('rec-list').innerHTML = recs.slice(0, 6).map(r => {
-    const posClass = r.avg_position >= 20 ? 'badge-critical' : 'badge-warning';
-    const related = r.related_queries.slice(0, 2).map(q =>
-      `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${q}</span>`).join('');
+
+  document.getElementById('rec-list').innerHTML = items.map(r => {
+    const posClass = r.avg_position <= 5 ? 'badge-good' : r.avg_position <= 10 ? 'badge-warning' : 'badge-critical';
+    let extraBadge = '';
+    if (tab === 'ctr_improve') {
+      extraBadge = `<span class="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">CTR ${r.ctr}%</span>`;
+    } else if (tab === 'trending_up') {
+      extraBadge = `<span class="text-xs badge-good px-2 py-0.5 rounded-full">↑${r.position_change}位改善</span>`;
+    } else if (tab === 'pre_season') {
+      const mNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+      const peaks = r.peak_months.map(m => mNames[m-1]).join('・');
+      extraBadge = `<span class="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">ピーク: ${peaks}</span>`;
+    }
     return `
-      <div class="border border-gray-100 rounded-xl p-4 hover:border-green-200 hover:bg-green-50 transition-all">
-        <div class="flex items-start justify-between gap-2 mb-2">
-          <div class="text-sm font-medium text-gray-800 leading-snug">${r.suggested_title}</div>
-          <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap">${r.avg_position}位</span>
+      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 hover:border-green-200 hover:bg-green-50 transition-all">
+        <div class="flex-1 min-w-0">
+          <a href="${r.page_url}" target="_blank"
+             class="text-sm text-gray-800 hover:underline truncate block font-medium">${r.label}</a>
+          <div class="flex flex-wrap items-center gap-2 mt-1">
+            ${extraBadge}
+            <span class="text-xs text-gray-400">表示 ${r.impressions.toLocaleString()}回/週</span>
+          </div>
         </div>
-        <div class="text-xs text-gray-500 mb-2">検索ワード: <span class="font-medium text-gray-700">${r.main_query}</span></div>
-        <div class="flex flex-wrap gap-1 mb-3">${related}</div>
-        <div class="flex items-center justify-between text-xs">
-          <span class="text-gray-500">表示回数 <span class="font-medium text-gray-700">${r.total_impressions.toLocaleString()}回</span>/週</span>
-        </div>
+        <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">${r.avg_position}位</span>
       </div>`;
   }).join('');
 }

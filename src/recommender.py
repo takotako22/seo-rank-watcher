@@ -1,172 +1,177 @@
 """
-GSCのクエリデータから新規記事作成のレコメンドを生成する。
+既存記事リライト優先のレコメンドロジック。
+DBのrank_snapshotsを使って4パターンに分類する。
 
-ロジック:
-- 表示回数が多い（潜在需要あり）
-- 平均順位が低い（15位以下）→ 対応コンテンツが弱い or ない
-- 類似クエリをグルーピングしてタイトル候補を提案
+パターン:
+  ctr_improve  : 表示回数多い & CTR低い（タイトルの引きを強化）
+  near_top     : 4〜6位（あと一歩で1〜3位・AIO入り）
+  trending_up  : 直近4週で順位が改善中（波に乗る）
+  pre_season   : 来月〜再来月がピーク & 現在10位以下（先行着手）
 """
 import os
-import re
-from dataclasses import dataclass
-from datetime import date, timedelta
+from dataclasses import dataclass, field
+from datetime import date
 
-from .gsc_client import fetch_page_stats
-
-RECOMMEND_POSITION_THRESHOLD = float(os.getenv("RECOMMEND_POSITION_THRESHOLD", "15"))
-RECOMMEND_MIN_IMPRESSIONS = int(os.getenv("RECOMMEND_MIN_IMPRESSIONS", "100"))
-RECOMMEND_TOP_N = int(os.getenv("RECOMMEND_TOP_N", "10"))
+# ── しきい値（環境変数で調整可） ───────────────────────────────────────────
+CTR_LOW_THRESHOLD    = float(os.getenv("CTR_LOW_THRESHOLD",      "0.02"))   # 2%未満
+CTR_MIN_IMPRESSIONS  = int(os.getenv("CTR_MIN_IMPRESSIONS",      "100"))    # 週100表示以上
+NEAR_TOP_MIN         = float(os.getenv("NEAR_TOP_POSITION_MIN",  "3.5"))
+NEAR_TOP_MAX         = float(os.getenv("NEAR_TOP_POSITION_MAX",  "6.5"))
+NEAR_TOP_MIN_IMP     = int(os.getenv("NEAR_TOP_MIN_IMPRESSIONS", "50"))
+TREND_UP_MIN_CHANGE  = float(os.getenv("TREND_UP_MIN_CHANGE",    "2.0"))    # 2位以上改善
+PRESEASON_MAX_POS    = float(os.getenv("PRESEASON_MAX_POSITION", "10.0"))
+TOP_N_EACH           = int(os.getenv("REC_TOP_N_EACH",           "10"))
 
 
 @dataclass
-class ArticleRecommendation:
-    main_query: str          # 代表クエリ
-    related_queries: list[str]  # 関連クエリ
+class RewriteRecommendation:
+    page_url: str
+    label: str
     avg_position: float
-    total_impressions: int
-    suggested_title: str
+    impressions: int
+    ctr: float          # % 表示（例: 1.5 → 1.5%）
+    pattern: str        # "ctr_improve" | "near_top" | "trending_up" | "pre_season"
+    position_change: float = 0.0   # trending_up: 正の値 = 改善幅
+    peak_months: list = field(default_factory=list)
 
 
-def _normalize(query: str) -> str:
-    """クエリを正規化してグルーピングのキーにする。"""
-    q = query.lower().strip()
-    # 助詞・助動詞・記号を除去
-    q = re.sub(r"[のはがをにでもへと、。・　\s]+", " ", q).strip()
-    # 単語をソートして順序違いを同一視
-    words = sorted(q.split())
-    return " ".join(words)
-
-
-def _suggest_title(query: str) -> str:
-    """クエリから記事タイトル候補を生成する。"""
-    q = query.strip()
-
-    # 「いつ」「時期」系
-    if any(w in q for w in ["いつ", "時期", "季節", "時間"]):
-        return f"{q}｜適切なタイミングを解説"
-    # 「方法」「やり方」「仕方」系
-    if any(w in q for w in ["方法", "やり方", "仕方", "コツ", "ポイント"]):
-        return f"{q}｜初心者向けに解説"
-    # 「育て方」系
-    if "育て方" in q or "栽培" in q:
-        plant = re.sub(r"(育て方|栽培方法|栽培)", "", q).strip()
-        return f"{plant}の育て方｜初心者でも失敗しないポイント"
-    # 「剪定」系
-    if "剪定" in q:
-        return f"{q}の方法と時期を徹底解説"
-    # 「肥料」「水やり」系
-    if any(w in q for w in ["肥料", "水やり", "土", "用土"]):
-        return f"{q}の正しいやり方を解説"
-    # 「原因」「理由」「なぜ」系
-    if any(w in q for w in ["原因", "理由", "なぜ", "なに", "どうして"]):
-        return f"{q}の原因と対処法"
-    # デフォルト
-    return f"{q}を徹底解説｜育て方・管理のポイント"
-
-
-def _group_queries(rows: list[dict]) -> list[dict]:
-    """類似クエリをグルーピングする。"""
-    groups: dict[str, dict] = {}
-    for row in rows:
-        key = _normalize(row["query"])
-        if key not in groups:
-            groups[key] = {
-                "queries": [],
-                "total_impressions": 0,
-                "position_sum": 0,
-                "count": 0,
-            }
-        groups[key]["queries"].append(row["query"])
-        groups[key]["total_impressions"] += row["impressions"]
-        groups[key]["position_sum"] += row["avg_position"] * row["impressions"]
-        groups[key]["count"] += row["impressions"]
-
-    result = []
-    for key, g in groups.items():
-        # 代表クエリ = 最もインプレッション数が多いクエリ
-        main_query = sorted(
-            g["queries"],
-            key=lambda q: next(r["impressions"] for r in rows if r["query"] == q),
-            reverse=True
-        )[0]
-        related = [q for q in g["queries"] if q != main_query][:3]
-        avg_pos = g["position_sum"] / g["count"] if g["count"] > 0 else 0
-
-        result.append({
-            "main_query": main_query,
-            "related_queries": related,
-            "avg_position": avg_pos,
-            "total_impressions": g["total_impressions"],
-        })
-    return result
-
-
-def fetch_recommendations(
-    site_url: str,
+def fetch_rewrite_recommendations(
+    site_id: int,
     url_prefix: str,
-    start_date: date,
-    end_date: date,
-) -> list[ArticleRecommendation]:
-    """記事作成レコメンドを生成して返す。"""
-    from .gsc_client import _build_service
+) -> dict[str, list[RewriteRecommendation]]:
+    """4パターンのリライト優先レコメンドを返す。"""
+    from .db import get_conn, fetch_peak_months
+    from .title_fetcher import get_titles
 
-    service = _build_service()
-
-    # クエリ単位でデータ取得
-    request_body = {
-        "startDate": start_date.isoformat(),
-        "endDate": end_date.isoformat(),
-        "dimensions": ["query"],
-        "dimensionFilterGroups": [
-            {
-                "filters": [
-                    {
-                        "dimension": "page",
-                        "operator": "contains",
-                        "expression": url_prefix,
-                    }
-                ]
-            }
-        ],
-        "rowLimit": 5000,
-    }
-    response = (
-        service.searchanalytics()
-        .query(siteUrl=site_url, body=request_body)
-        .execute()
-    )
-    rows = response.get("rows", [])
-
-    # 高インプレッション × 低順位に絞る
-    candidates = []
-    for row in rows:
-        impressions = int(row.get("impressions", 0))
-        avg_position = row.get("position", 0.0)
-        if impressions >= RECOMMEND_MIN_IMPRESSIONS and avg_position >= RECOMMEND_POSITION_THRESHOLD:
-            candidates.append({
-                "query": row["keys"][0],
-                "impressions": impressions,
-                "avg_position": avg_position,
-                "ctr": row.get("ctr", 0.0),
-            })
-
-    # インプレッション降順でソート
-    candidates.sort(key=lambda x: x["impressions"], reverse=True)
-
-    # グルーピング
-    grouped = _group_queries(candidates)
-    grouped.sort(key=lambda x: x["total_impressions"], reverse=True)
-
-    # Top Nをレコメンドとして返す
-    recommendations = []
-    for g in grouped[:RECOMMEND_TOP_N]:
-        recommendations.append(
-            ArticleRecommendation(
-                main_query=g["main_query"],
-                related_queries=g["related_queries"],
-                avg_position=g["avg_position"],
-                total_impressions=g["total_impressions"],
-                suggested_title=_suggest_title(g["main_query"]),
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # ── 最新スナップショット日 ─────────────────────────────────────
+            cur.execute(
+                "SELECT MAX(snapshot_date) FROM rank_snapshots WHERE site_id = %s",
+                (site_id,),
             )
-        )
-    return recommendations
+            latest = cur.fetchone()[0]
+            if not latest:
+                return {"ctr_improve": [], "near_top": [], "trending_up": [], "pre_season": []}
+
+            # ── 最新週データ ───────────────────────────────────────────────
+            cur.execute(
+                """
+                SELECT page_url, avg_position, impressions, ctr
+                FROM rank_snapshots
+                WHERE site_id = %s AND snapshot_date = %s AND page_url LIKE %s
+                ORDER BY impressions DESC
+                """,
+                (site_id, latest, f"{url_prefix}%"),
+            )
+            latest_rows: dict[str, dict] = {
+                r[0]: {
+                    "avg_position": float(r[1] or 0),
+                    "impressions": int(r[2] or 0),
+                    "ctr": float(r[3] or 0),
+                }
+                for r in cur.fetchall()
+            }
+
+            # ── 4週前スナップショット日 ────────────────────────────────────
+            cur.execute(
+                """
+                SELECT DISTINCT snapshot_date FROM rank_snapshots
+                WHERE site_id = %s
+                  AND snapshot_date <= %s - INTERVAL '3 weeks'
+                  AND page_url LIKE %s
+                ORDER BY snapshot_date DESC LIMIT 1
+                """,
+                (site_id, latest, f"{url_prefix}%"),
+            )
+            row4 = cur.fetchone()
+            prev_date = row4[0] if row4 else None
+
+            prev_positions: dict[str, float] = {}
+            if prev_date:
+                cur.execute(
+                    """
+                    SELECT page_url, avg_position FROM rank_snapshots
+                    WHERE site_id = %s AND snapshot_date = %s AND page_url LIKE %s
+                    """,
+                    (site_id, prev_date, f"{url_prefix}%"),
+                )
+                prev_positions = {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+    # ── ピーク月 & タイトル ────────────────────────────────────────────────
+    all_urls  = list(latest_rows.keys())
+    peak_map  = fetch_peak_months(all_urls, site_id)
+    titles    = get_titles(all_urls, site_id)
+
+    today_month  = date.today().month
+    next_month   = (today_month % 12) + 1
+    next2_month  = (next_month  % 12) + 1
+
+    # ── 各パターンに分類 ───────────────────────────────────────────────────
+    ctr_improve: list[RewriteRecommendation] = []
+    near_top:    list[RewriteRecommendation] = []
+    trending_up: list[RewriteRecommendation] = []
+    pre_season:  list[RewriteRecommendation] = []
+
+    for url, d in latest_rows.items():
+        pos = d["avg_position"]
+        imp = d["impressions"]
+        ctr = d["ctr"]
+        if pos <= 0:
+            continue
+
+        label = titles.get(url, url.rstrip("/").split("/")[-1].replace("-", " "))
+        peaks = peak_map.get(url, [])
+
+        # CTR改善: 表示回数多い & CTR低い & 1〜15位
+        if imp >= CTR_MIN_IMPRESSIONS and ctr < CTR_LOW_THRESHOLD and 1 <= pos <= 15:
+            ctr_improve.append(RewriteRecommendation(
+                page_url=url, label=label,
+                avg_position=round(pos, 1), impressions=imp,
+                ctr=round(ctr * 100, 2), pattern="ctr_improve",
+                peak_months=peaks,
+            ))
+
+        # 上位押し上げ: 4〜6位 & 一定の表示回数
+        if NEAR_TOP_MIN <= pos <= NEAR_TOP_MAX and imp >= NEAR_TOP_MIN_IMP:
+            near_top.append(RewriteRecommendation(
+                page_url=url, label=label,
+                avg_position=round(pos, 1), impressions=imp,
+                ctr=round(ctr * 100, 2), pattern="near_top",
+                peak_months=peaks,
+            ))
+
+        # 上昇トレンド: 4週前比で2位以上改善中
+        prev_pos = prev_positions.get(url, 0)
+        if prev_pos > 0:
+            change = prev_pos - pos   # 正の値 = 順位が上がった（数字が小さくなった）
+            if change >= TREND_UP_MIN_CHANGE:
+                trending_up.append(RewriteRecommendation(
+                    page_url=url, label=label,
+                    avg_position=round(pos, 1), impressions=imp,
+                    ctr=round(ctr * 100, 2), pattern="trending_up",
+                    position_change=round(change, 1),
+                    peak_months=peaks,
+                ))
+
+        # 来季先行対策: 来月 or 再来月がピーク & 現在10位以下
+        if (next_month in peaks or next2_month in peaks) and pos >= PRESEASON_MAX_POS:
+            pre_season.append(RewriteRecommendation(
+                page_url=url, label=label,
+                avg_position=round(pos, 1), impressions=imp,
+                ctr=round(ctr * 100, 2), pattern="pre_season",
+                peak_months=peaks,
+            ))
+
+    # ── ソート ─────────────────────────────────────────────────────────────
+    ctr_improve.sort(key=lambda x: x.impressions, reverse=True)
+    near_top.sort(key=lambda x: x.impressions, reverse=True)
+    trending_up.sort(key=lambda x: x.position_change, reverse=True)
+    pre_season.sort(key=lambda x: x.avg_position)
+
+    return {
+        "ctr_improve": ctr_improve[:TOP_N_EACH],
+        "near_top":    near_top[:TOP_N_EACH],
+        "trending_up": trending_up[:TOP_N_EACH],
+        "pre_season":  pre_season[:TOP_N_EACH],
+    }
