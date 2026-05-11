@@ -180,6 +180,82 @@
 
 </div>
 
+<!-- Rewrite Advice Modal -->
+<div id="advice-modal" class="modal-overlay hidden">
+  <div class="modal-box" style="width:580px">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-bold text-gray-800">✍️ リライトアドバイス</h2>
+      <button onclick="closeAdviceModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+    </div>
+
+    <!-- ローディング -->
+    <div id="advice-loading" class="py-10 text-center text-sm text-gray-400">
+      <span class="spinning inline-block mr-1">⏳</span> GSCからデータを取得中...
+    </div>
+
+    <!-- コンテンツ（初期は非表示） -->
+    <div id="advice-content" class="hidden space-y-5">
+
+      <!-- タイトル改善案 -->
+      <div>
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">タイトル改善案</h3>
+        <div class="space-y-2">
+          <div class="flex items-start gap-2">
+            <span class="text-xs bg-red-50 text-red-500 px-2 py-0.5 rounded shrink-0 mt-0.5">現在</span>
+            <p id="adv-current-title" class="text-sm text-gray-600 leading-snug"></p>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded shrink-0 mt-0.5">改善案</span>
+            <p id="adv-suggested-title" class="text-sm font-medium text-gray-800 leading-snug"></p>
+          </div>
+        </div>
+        <!-- 不足キーワード -->
+        <div id="adv-keywords-wrap" class="mt-3 hidden">
+          <p class="text-xs text-gray-400 mb-1.5">タイトルに追加を検討すべきキーワード</p>
+          <div id="adv-keywords" class="flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+
+      <hr class="border-gray-100">
+
+      <!-- 改善ポイント -->
+      <div>
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">コンテンツ改善チェックリスト</h3>
+        <ul id="adv-tips" class="space-y-2"></ul>
+      </div>
+
+      <hr class="border-gray-100">
+
+      <!-- 上位クエリ -->
+      <div>
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">上位流入クエリ（直近28日）</h3>
+        <div id="adv-queries-wrap">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-100">
+                <th class="text-left pb-1.5 font-normal">クエリ</th>
+                <th class="text-right pb-1.5 font-normal w-16">表示回数</th>
+                <th class="text-right pb-1.5 font-normal w-12">順位</th>
+                <th class="text-right pb-1.5 font-normal w-12">CTR</th>
+              </tr>
+            </thead>
+            <tbody id="adv-queries" class="divide-y divide-gray-50"></tbody>
+          </table>
+          <p id="adv-queries-empty" class="text-xs text-gray-400 text-center py-3 hidden">クエリデータなし</p>
+        </div>
+      </div>
+
+      <!-- 記事リンク -->
+      <div class="pt-1">
+        <a id="adv-page-link" href="#" target="_blank"
+           class="text-xs text-green-600 hover:underline flex items-center gap-1">
+          🔗 記事を開く
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Site Management Modal -->
 <div id="site-modal" class="modal-overlay hidden">
   <div class="modal-box">
@@ -434,6 +510,7 @@ function renderRecTab(tab) {
       const peaks = r.peak_months.map(m => mNames[m-1]).join('・');
       extraBadge = `<span class="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">ピーク: ${peaks}</span>`;
     }
+    const pageUrlEsc = r.page_url.replace(/'/g, "\\'");
     return `
       <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 hover:border-green-200 hover:bg-green-50 transition-all">
         <div class="flex-1 min-w-0">
@@ -444,7 +521,13 @@ function renderRecTab(tab) {
             <span class="text-xs text-gray-400">表示 ${r.impressions.toLocaleString()}回/週</span>
           </div>
         </div>
-        <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">${r.avg_position}位</span>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap">${r.avg_position}位</span>
+          <button onclick="openAdviceModal('${pageUrlEsc}','${tab}')"
+            class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-white hover:border-green-300 hover:text-green-600 whitespace-nowrap">
+            詳細
+          </button>
+        </div>
       </div>`;
   }).join('');
 }
@@ -496,6 +579,89 @@ async function runBatch() {
     btn.innerHTML = '❌ エラー';
     btn.disabled = false;
   }
+}
+
+// ── リライトアドバイスモーダル ────────────────────────────────────────────
+
+async function openAdviceModal(pageUrl, pattern) {
+  const modal = document.getElementById('advice-modal');
+  modal.classList.remove('hidden');
+  document.getElementById('advice-loading').classList.remove('hidden');
+  document.getElementById('advice-content').classList.add('hidden');
+
+  try {
+    const res = await fetch(
+      `/api/recommendations/detail?site_id=${currentSiteId}&page_url=${encodeURIComponent(pageUrl)}&pattern=${pattern}`
+    );
+    if (!res.ok) throw new Error('fetch failed');
+    const d = await res.json();
+    renderAdvice(d, pageUrl);
+  } catch(e) {
+    document.getElementById('advice-loading').textContent = '❌ データ取得に失敗しました';
+  }
+}
+
+function closeAdviceModal() {
+  document.getElementById('advice-modal').classList.add('hidden');
+}
+
+document.getElementById('advice-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAdviceModal();
+});
+
+function renderAdvice(d, pageUrl) {
+  // タイトル
+  document.getElementById('adv-current-title').textContent   = d.current_title  || '（タイトル未取得）';
+  document.getElementById('adv-suggested-title').textContent = d.suggested_title || d.current_title || '—';
+
+  // 不足キーワード
+  const kwWrap = document.getElementById('adv-keywords-wrap');
+  const kwEl   = document.getElementById('adv-keywords');
+  if (d.missing_keywords && d.missing_keywords.length > 0) {
+    kwEl.innerHTML = d.missing_keywords.map(k =>
+      `<span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+         +${k.keyword} <span class="text-amber-400">${k.impressions.toLocaleString()}回</span>
+       </span>`
+    ).join('');
+    kwWrap.classList.remove('hidden');
+  } else {
+    kwWrap.classList.add('hidden');
+  }
+
+  // 改善ポイント
+  document.getElementById('adv-tips').innerHTML = (d.content_tips || []).map(t =>
+    `<li class="flex items-start gap-2 text-sm text-gray-700">
+       <span class="shrink-0">${t.icon}</span>
+       <span>${t.point}</span>
+     </li>`
+  ).join('');
+
+  // 上位クエリ
+  const tbody = document.getElementById('adv-queries');
+  const emptyEl = document.getElementById('adv-queries-empty');
+  if (d.top_queries && d.top_queries.length > 0) {
+    tbody.innerHTML = d.top_queries.map(q => {
+      const posClass = q.position <= 5 ? 'text-green-600' : q.position <= 10 ? 'text-yellow-600' : 'text-gray-500';
+      return `<tr>
+        <td class="py-1.5 pr-2 text-gray-700 max-w-[280px] truncate">${q.query}</td>
+        <td class="py-1.5 text-right text-gray-500">${q.impressions.toLocaleString()}</td>
+        <td class="py-1.5 text-right ${posClass} font-medium">${q.position}</td>
+        <td class="py-1.5 text-right text-gray-500">${q.ctr}%</td>
+      </tr>`;
+    }).join('');
+    emptyEl.classList.add('hidden');
+  } else {
+    tbody.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+  }
+
+  // 記事リンク
+  document.getElementById('adv-page-link').href = pageUrl;
+  document.getElementById('adv-page-link').textContent = `🔗 ${pageUrl}`;
+
+  // ローディング → コンテンツ切替
+  document.getElementById('advice-loading').classList.add('hidden');
+  document.getElementById('advice-content').classList.remove('hidden');
 }
 
 // ── サイト管理モーダル ──────────────────────────────────────────────────────

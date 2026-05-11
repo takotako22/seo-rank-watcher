@@ -203,6 +203,15 @@ def api_season(site_id: int = 1, month: int | None = None):
     return {"month": m, "articles": articles}
 
 
+@app.get("/api/recommendations/detail")
+def api_rec_detail(site_id: int = 1, page_url: str = "", pattern: str = "ctr_improve"):
+    site = _get_site_or_404(site_id)
+    if not page_url:
+        raise HTTPException(status_code=400, detail="page_url is required")
+    from .rewrite_advisor import get_rewrite_advice
+    return get_rewrite_advice(site["gsc_site_url"], page_url, pattern, site_id)
+
+
 @app.get("/api/recommendations")
 def api_recommendations(site_id: int = 1):
     site = _get_site_or_404(site_id)
