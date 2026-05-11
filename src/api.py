@@ -26,6 +26,17 @@ URL_PREFIX = os.environ.get("TARGET_URL_PREFIX", "https://greensnap.co.jp/column
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
 
+@app.on_event("startup")
+def on_startup():
+    """起動時にDBマイグレーションを自動実行する。"""
+    from .db import run_migrations
+    try:
+        run_migrations()
+        print("migrations: ok")
+    except Exception as e:
+        print(f"migrations error: {e}")
+
+
 # ── Static files & HTML ──────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
