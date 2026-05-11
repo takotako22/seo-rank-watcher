@@ -52,9 +52,15 @@
 
   <!-- Header -->
   <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-xl font-bold text-gray-800">ダッシュボード</h1>
-      <p class="text-sm text-gray-500" id="header-period">読み込み中...</p>
+    <div class="flex items-center gap-4">
+      <div>
+        <h1 class="text-xl font-bold text-gray-800">ダッシュボード</h1>
+        <p class="text-sm text-gray-500" id="header-period">読み込み中...</p>
+      </div>
+      <select id="site-select" onchange="onSiteChange()"
+        class="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 bg-white min-w-[180px]">
+        <option value="">読み込み中...</option>
+      </select>
     </div>
     <div class="flex gap-2">
       <button onclick="runBatch()" id="run-btn"
@@ -160,6 +166,23 @@
 <script>
 let allAlerts = { critical: [], warning: [], watch: [] };
 let trendChart = null;
+let currentSiteId = 1;
+
+async function loadSites() {
+  const res = await fetch('/api/sites');
+  if (!res.ok) return;
+  const sites = await res.json();
+  const sel = document.getElementById('site-select');
+  sel.innerHTML = sites.filter(s => s.is_active).map(s =>
+    `<option value="${s.id}">${s.name}</option>`
+  ).join('');
+  currentSiteId = sites[0]?.id || 1;
+}
+
+function onSiteChange() {
+  currentSiteId = parseInt(document.getElementById('site-select').value);
+  loadAll();
+}
 
 // ── ユーティリティ ──────────────────────────────────────────────────────────
 
@@ -231,7 +254,7 @@ function renderAlerts(type = 'all') {
 // ── データ読み込み ─────────────────────────────────────────────────────────
 
 async function loadSummary() {
-  const res = await fetch('/api/summary');
+  const res = await fetch(`/api/summary?site_id=${currentSiteId}`);
   if (!res.ok) { document.getElementById('alert-list').innerHTML = '<div class="text-red-500 text-sm p-4">データ取得に失敗しました</div>'; return; }
   const data = await res.json();
   const s = data.summary;
@@ -261,7 +284,7 @@ async function loadSummary() {
 
 async function loadSeason() {
   const month = new Date().getMonth() + 1;
-  const res = await fetch(`/api/season?month=${month}`);
+  const res = await fetch(`/api/season?site_id=${currentSiteId}&month=${month}`);
   if (!res.ok) return;
   const data = await res.json();
   const articles = data.articles || [];
@@ -275,7 +298,7 @@ async function loadSeason() {
 }
 
 async function loadRecommendations() {
-  const res = await fetch('/api/recommendations');
+  const res = await fetch(`/api/recommendations?site_id=${currentSiteId}`);
   if (!res.ok) return;
   const recs = await res.json();
   document.getElementById('rec-count').textContent = `今週 ${recs.length}件`;
@@ -304,7 +327,7 @@ async function loadRecommendations() {
 
 async function loadTrend() {
   const weeks = document.getElementById('weeks-select').value;
-  const res = await fetch(`/api/trend?weeks=${weeks}`);
+  const res = await fetch(`/api/trend?site_id=${currentSiteId}&weeks=${weeks}`);
   if (!res.ok) return;
   const data = await res.json();
   const colors = ['#6366f1','#16a34a','#dc2626','#f59e0b','#06b6d4'];
@@ -360,7 +383,8 @@ function loadAll() {
   loadTrend();
 }
 
-loadAll();
+// サイト一覧を先に読んでからデータ読み込み
+loadSites().then(() => loadAll());
 </script>
 </body>
 </html>

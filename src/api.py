@@ -1,17 +1,17 @@
 """
 FastAPI ダッシュボードサーバー。
 - /          : ダッシュボードHTML
-- /api/*     : DBからデータを取得して返すエンドポイント
-- /api/run   : 週次バッチを手動トリガー（POST）
+- /api/sites : サイト管理
+- /api/*     : DBからデータを取得して返すエンドポイント（?site_id=1）
 """
 import os
 from datetime import date, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -20,24 +20,22 @@ from .analyzer import analyze, build_summary
 from .recommender import fetch_recommendations
 
 app = FastAPI(title="SEO Rank Watcher")
-
-SITE_URL   = os.environ["GSC_SITE_URL"]
-URL_PREFIX = os.environ.get("TARGET_URL_PREFIX", "https://greensnap.co.jp/columns/")
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
 
 @app.on_event("startup")
 def on_startup():
-    """起動時にDBマイグレーションを自動実行する。"""
     from .db import run_migrations
+    from .site_manager import seed_default_site
     try:
         run_migrations()
-        print("migrations: ok")
+        seed_default_site()
+        print("startup: ok")
     except Exception as e:
-        print(f"migrations error: {e}")
+        print(f"startup error: {e}")
 
 
-# ── Static files & HTML ──────────────────────────────────────────────────────
+# ── Static ───────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -46,311 +44,226 @@ def index():
 
 # ── Helper ───────────────────────────────────────────────────────────────────
 
-def _latest_snapshot_date() -> date | None:
+def _get_site_or_404(site_id: int) -> dict:
+    from .site_manager import get_site
+    site = get_site(site_id)
+    if not site:
+        raise HTTPException(status_code=404, detail=f"site_id={site_id} が見つかりません")
+    return site
+
+
+def _latest_snapshot_date(site_id: int) -> date | None:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT MAX(snapshot_date) FROM rank_snapshots")
+            cur.execute("SELECT MAX(snapshot_date) FROM rank_snapshots WHERE site_id = %s", (site_id,))
             row = cur.fetchone()
             return row[0] if row else None
 
 
-def _weekly_trend(url_prefix: str, weeks: int = 12) -> list[dict]:
-    """週ごとの合計インプレッション・平均順位推移（全記事合算）を返す。"""
+def _top_articles_trend(site_id: int, url_prefix: str, top_n: int = 5, weeks: int = 12) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    snapshot_date,
-                    SUM(impressions)    AS total_impressions,
-                    AVG(avg_position)   AS avg_position,
-                    SUM(clicks)         AS total_clicks
-                FROM rank_snapshots
-                WHERE page_url LIKE %s
-                  AND snapshot_date >= CURRENT_DATE - INTERVAL '%s weeks'
-                GROUP BY snapshot_date
-                ORDER BY snapshot_date
-                """,
-                (f"{url_prefix}%", weeks),
-            )
-            return [
-                {
-                    "date": str(r[0]),
-                    "impressions": int(r[1] or 0),
-                    "avg_position": round(float(r[2] or 0), 1),
-                    "clicks": int(r[3] or 0),
-                }
-                for r in cur.fetchall()
-            ]
-
-
-def _top_articles_trend(url_prefix: str, top_n: int = 5, weeks: int = 12) -> dict:
-    """表示回数Top N 記事の週次インプレッション推移を返す。"""
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            # Top N 記事を特定
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT page_url, SUM(impressions) AS total
                 FROM rank_snapshots
-                WHERE page_url LIKE %s
+                WHERE site_id = %s AND page_url LIKE %s
                   AND snapshot_date >= CURRENT_DATE - INTERVAL '4 weeks'
-                GROUP BY page_url
-                ORDER BY total DESC
-                LIMIT %s
-                """,
-                (f"{url_prefix}%", top_n),
-            )
+                GROUP BY page_url ORDER BY total DESC LIMIT %s
+            """, (site_id, f"{url_prefix}%", top_n))
             top_urls = [r[0] for r in cur.fetchall()]
-
             if not top_urls:
                 return {"labels": [], "datasets": []}
-
-            # 週次データ取得
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT page_url, snapshot_date, impressions
                 FROM rank_snapshots
-                WHERE page_url = ANY(%s)
+                WHERE site_id = %s AND page_url = ANY(%s)
                   AND snapshot_date >= CURRENT_DATE - INTERVAL '%s weeks'
                 ORDER BY snapshot_date
-                """,
-                (top_urls, weeks),
-            )
+            """, (site_id, top_urls, weeks))
             rows = cur.fetchall()
-
-    # ラベル（日付）収集
     dates = sorted(set(str(r[1]) for r in rows))
-
+    colors = ["#6366f1","#16a34a","#dc2626","#f59e0b","#06b6d4"]
     datasets = []
-    colors = ["#6366f1", "#16a34a", "#dc2626", "#f59e0b", "#06b6d4"]
     for i, url in enumerate(top_urls):
-        label = url.replace("https://greensnap.co.jp/columns/", "").strip("/")[:20]
+        label = url.replace(url_prefix, "").strip("/")[:25]
         data_map = {str(r[1]): r[2] for r in rows if r[0] == url}
-        datasets.append({
-            "label": label,
-            "data": [data_map.get(d, 0) for d in dates],
-            "borderColor": colors[i % len(colors)],
-        })
-
+        datasets.append({"label": label, "data": [data_map.get(d, 0) for d in dates], "borderColor": colors[i % len(colors)]})
     return {"labels": dates, "datasets": datasets}
 
 
-def _season_articles(url_prefix: str, month: int) -> list[dict]:
-    """指定月がピーク月の記事と現在の順位を返す。"""
+def _season_articles(site_id: int, url_prefix: str, month: int) -> list[dict]:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT s.page_url, r.avg_position
+            cur.execute("""
+                SELECT s.page_url, r.avg_position, r.impressions
                 FROM article_seasons s
                 LEFT JOIN rank_snapshots r
-                    ON r.page_url = s.page_url
-                    AND r.snapshot_date = (SELECT MAX(snapshot_date) FROM rank_snapshots)
-                WHERE %s = ANY(s.peak_months)
-                  AND s.page_url LIKE %s
-                ORDER BY r.impressions DESC NULLS LAST
-                LIMIT 20
-                """,
-                (month, f"{url_prefix}%"),
-            )
-            return [
-                {
-                    "page_url": r[0],
-                    "label": r[0].replace("https://greensnap.co.jp/columns/", "").strip("/")[:20],
-                    "avg_position": round(float(r[1] or 99), 1),
-                }
-                for r in cur.fetchall()
-            ]
+                    ON r.page_url = s.page_url AND r.site_id = s.site_id
+                    AND r.snapshot_date = (SELECT MAX(snapshot_date) FROM rank_snapshots WHERE site_id = %s)
+                WHERE s.site_id = %s AND %s = ANY(s.peak_months) AND s.page_url LIKE %s
+                ORDER BY r.impressions DESC NULLS LAST LIMIT 20
+            """, (site_id, site_id, month, f"{url_prefix}%"))
+            return [{"page_url": r[0], "label": r[0].rstrip("/").split("/")[-1], "avg_position": round(float(r[1] or 99), 1)} for r in cur.fetchall()]
 
 
-# ── 診断エンドポイント ────────────────────────────────────────────────────────
+# ── サイト管理 API ────────────────────────────────────────────────────────────
 
-@app.get("/api/health")
-def api_health():
-    """DB接続・テーブルのレコード数・最新スナップショット日付を返す。"""
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM rank_snapshots")
-                snapshot_count = cur.fetchone()[0]
+class SiteCreate(BaseModel):
+    name: str
+    gsc_site_url: str
+    url_prefix: str
+    ga4_property_id: str | None = None
 
-                cur.execute("SELECT MAX(snapshot_date) FROM rank_snapshots")
-                latest_date = cur.fetchone()[0]
+class SiteUpdate(BaseModel):
+    name: str | None = None
+    gsc_site_url: str | None = None
+    url_prefix: str | None = None
+    ga4_property_id: str | None = None
+    is_active: bool | None = None
 
-                cur.execute("SELECT COUNT(*) FROM article_seasons")
-                season_count = cur.fetchone()[0]
+@app.get("/api/sites")
+def api_sites():
+    from .site_manager import get_all_sites
+    return get_all_sites()
 
-        return {
-            "db": "ok",
-            "rank_snapshots_count": snapshot_count,
-            "latest_snapshot_date": str(latest_date) if latest_date else None,
-            "article_seasons_count": season_count,
-            "site_url": SITE_URL,
-            "url_prefix": URL_PREFIX,
-        }
-    except Exception as e:
-        return JSONResponse({"db": "error", "detail": str(e)}, status_code=500)
+@app.post("/api/sites")
+def api_site_create(body: SiteCreate):
+    from .site_manager import create_site
+    return create_site(body.name, body.gsc_site_url, body.url_prefix, body.ga4_property_id)
+
+@app.patch("/api/sites/{site_id}")
+def api_site_update(site_id: int, body: SiteUpdate):
+    from .site_manager import update_site
+    site = update_site(site_id, **{k: v for k, v in body.dict().items() if v is not None})
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    return site
+
+@app.delete("/api/sites/{site_id}")
+def api_site_delete(site_id: int):
+    from .site_manager import update_site
+    update_site(site_id, is_active=False)
+    return {"status": "ok"}
 
 
-# ── API エンドポイント ────────────────────────────────────────────────────────
+# ── データ API ────────────────────────────────────────────────────────────────
 
 @app.get("/api/summary")
-def api_summary():
-    latest = _latest_snapshot_date()
+def api_summary(site_id: int = 1):
+    site = _get_site_or_404(site_id)
+    latest = _latest_snapshot_date(site_id)
     if not latest:
         return JSONResponse({"error": "データがありません"}, status_code=404)
 
-    yoy_pairs = fetch_yoy_pairs(latest, URL_PREFIX)
+    yoy_pairs = fetch_yoy_pairs(latest, site["url_prefix"], site_id)
     page_urls  = [p["page_url"] for p in yoy_pairs]
-    peak_map   = fetch_peak_months(page_urls)
+    peak_map   = fetch_peak_months(page_urls, site_id)
     alerts     = analyze(yoy_pairs, latest, peak_map)
     summary    = build_summary(yoy_pairs)
 
+    def fmt(a):
+        return {
+            "page_url": a.page_url,
+            "label": a.page_url.replace(site["url_prefix"], "").strip("/"),
+            "cur_position": a.cur_position,
+            "prev_position": a.prev_position,
+            "position_diff": round(a.position_diff, 1),
+            "cur_impressions": a.cur_impressions,
+            "impression_change_rate": round(a.impression_change_rate * 100, 1),
+            "estimated_pv_loss": a.estimated_pv_loss,
+        }
+
     return {
         "snapshot_date": str(latest),
+        "site": site,
         "summary": summary,
         "alerts": {
-            "critical": [
-                {
-                    "page_url": a.page_url,
-                    "label": a.page_url.replace("https://greensnap.co.jp/columns/", "").strip("/"),
-                    "cur_position": a.cur_position,
-                    "prev_position": a.prev_position,
-                    "position_diff": round(a.position_diff, 1),
-                    "cur_impressions": a.cur_impressions,
-                    "impression_change_rate": round(a.impression_change_rate * 100, 1),
-                    "estimated_pv_loss": a.estimated_pv_loss,
-                }
-                for a in alerts["critical"]
-            ],
-            "warning": [
-                {
-                    "page_url": a.page_url,
-                    "label": a.page_url.replace("https://greensnap.co.jp/columns/", "").strip("/"),
-                    "cur_position": a.cur_position,
-                    "prev_position": a.prev_position,
-                    "position_diff": round(a.position_diff, 1),
-                    "cur_impressions": a.cur_impressions,
-                    "impression_change_rate": round(a.impression_change_rate * 100, 1),
-                    "estimated_pv_loss": a.estimated_pv_loss,
-                }
-                for a in alerts["warning"]
-            ],
-            "watch": [
-                {
-                    "page_url": a.page_url,
-                    "label": a.page_url.replace("https://greensnap.co.jp/columns/", "").strip("/"),
-                    "cur_position": a.cur_position,
-                    "prev_position": a.prev_position,
-                    "position_diff": round(a.position_diff, 1),
-                }
-                for a in alerts["watch"]
-            ],
+            "critical": [fmt(a) for a in alerts["critical"]],
+            "warning":  [fmt(a) for a in alerts["warning"]],
+            "watch":    [fmt(a) for a in alerts["watch"]],
         },
     }
 
 
 @app.get("/api/trend")
-def api_trend(weeks: int = 12):
-    return _top_articles_trend(URL_PREFIX, weeks=weeks)
+def api_trend(site_id: int = 1, weeks: int = 12):
+    site = _get_site_or_404(site_id)
+    return _top_articles_trend(site_id, site["url_prefix"], weeks=weeks)
 
 
 @app.get("/api/season")
-def api_season(month: int | None = None):
+def api_season(site_id: int = 1, month: int | None = None):
+    site = _get_site_or_404(site_id)
     m = month or date.today().month
-    articles = _season_articles(URL_PREFIX, m)
-    # タイトルを付与
+    articles = _season_articles(site_id, site["url_prefix"], m)
     from .title_fetcher import get_titles
     urls = [a["page_url"] for a in articles]
-    titles = get_titles(urls)
+    titles = get_titles(urls, site_id)
     for a in articles:
         a["label"] = titles.get(a["page_url"], a["label"])
     return {"month": m, "articles": articles}
 
 
+@app.get("/api/recommendations")
+def api_recommendations(site_id: int = 1):
+    site = _get_site_or_404(site_id)
+    today      = date.today()
+    end_date   = today - timedelta(days=3)
+    start_date = end_date - timedelta(days=27)
+    recs = fetch_recommendations(site["gsc_site_url"], site["url_prefix"], start_date, end_date)
+    return [{"main_query": r.main_query, "related_queries": r.related_queries, "avg_position": round(r.avg_position, 1), "total_impressions": r.total_impressions, "suggested_title": r.suggested_title} for r in recs]
+
+
+# ── タイトル取得 ──────────────────────────────────────────────────────────────
+
 @app.get("/api/titles/fetch")
-def api_titles_fetch(background_tasks: BackgroundTasks, limit: int = 100):
-    """未取得URLのタイトルをバックグラウンドでスクレイプする。"""
+def api_titles_fetch(background_tasks: BackgroundTasks, site_id: int = 1, limit: int = 100):
     def _run():
         from .title_fetcher import fetch_titles_for_urls, upsert_titles
         with get_conn() as conn:
             with conn.cursor() as cur:
+                site = _get_site_or_404(site_id)
                 cur.execute("""
-                    SELECT DISTINCT r.page_url
-                    FROM rank_snapshots r
-                    LEFT JOIN page_titles t ON t.page_url = r.page_url
-                    WHERE t.page_url IS NULL
-                      AND r.page_url LIKE %s
-                    ORDER BY r.page_url
+                    SELECT DISTINCT r.page_url FROM rank_snapshots r
+                    LEFT JOIN page_titles t ON t.page_url = r.page_url AND t.site_id = r.site_id
+                    WHERE r.site_id = %s AND t.page_url IS NULL AND r.page_url LIKE %s
                     LIMIT %s
-                """, (f"{URL_PREFIX}%", limit))
+                """, (site_id, f"{site['url_prefix']}%", limit))
                 urls = [row[0] for row in cur.fetchall()]
         if urls:
             titles = fetch_titles_for_urls(urls)
-            upsert_titles(titles)
-            print(f"タイトル取得完了: {len(titles)}/{len(urls)}件")
+            upsert_titles(titles, site_id)
     background_tasks.add_task(_run)
     return {"status": "started", "message": f"最大{limit}件のタイトル取得を開始しました"}
 
-
 @app.get("/api/titles/status")
-def api_titles_status():
+def api_titles_status(site_id: int = 1):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM page_titles")
+            cur.execute("SELECT COUNT(*) FROM page_titles WHERE site_id = %s", (site_id,))
             titles_count = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(DISTINCT page_url) FROM rank_snapshots WHERE page_url LIKE %s", (f"{URL_PREFIX}%",))
+            cur.execute("SELECT COUNT(DISTINCT page_url) FROM rank_snapshots WHERE site_id = %s", (site_id,))
             total_urls = cur.fetchone()[0]
     return {"fetched": titles_count, "total_urls": total_urls, "remaining": total_urls - titles_count}
 
 
-@app.get("/api/recommendations")
-def api_recommendations():
-    today     = date.today()
-    end_date  = today - timedelta(days=3)
-    start_date = end_date - timedelta(days=27)  # 4週分
-    recs = fetch_recommendations(SITE_URL, URL_PREFIX, start_date, end_date)
-    return [
-        {
-            "main_query": r.main_query,
-            "related_queries": r.related_queries,
-            "avg_position": round(r.avg_position, 1),
-            "total_impressions": r.total_impressions,
-            "suggested_title": r.suggested_title,
-        }
-        for r in recs
-    ]
-
-
-def _trigger_run(background_tasks: BackgroundTasks):
-    def _run():
-        from .main import run_weekly
-        run_weekly()
-    background_tasks.add_task(_run)
-    return {"status": "started", "message": "週次バッチを開始しました"}
+# ── バックフィル ──────────────────────────────────────────────────────────────
 
 @app.get("/api/backfill")
-def api_backfill(months: int = 16, chunk: int = 5):
-    """
-    過去データを chunk 週ずつ同期実行する。
-    未取得の週だけ処理するので何度呼んでもOK。
-    全部終わるまでブラウザで繰り返し叩いてください。
-    """
+def api_backfill(site_id: int = 1, months: int = 16, chunk: int = 5):
     import time
-    from datetime import date, timedelta
     from .gsc_client import fetch_page_stats
     from .db import upsert_snapshots
 
-    # 取得済み週を確認
+    site = _get_site_or_404(site_id)
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT snapshot_date FROM rank_snapshots GROUP BY snapshot_date")
+            cur.execute("SELECT snapshot_date FROM rank_snapshots WHERE site_id = %s GROUP BY snapshot_date", (site_id,))
             done_dates = {row[0] for row in cur.fetchall()}
 
-    # 対象週を計算
-    today = date.today()
-    cutoff = today - timedelta(days=3)
+    today   = date.today()
+    cutoff  = today - timedelta(days=3)
     days_since_sunday = (cutoff.weekday() + 1) % 7
     latest_sunday = cutoff - timedelta(days=days_since_sunday)
     earliest = today - timedelta(days=30 * months)
@@ -366,114 +279,50 @@ def api_backfill(months: int = 16, chunk: int = 5):
     if not pending:
         return {"status": "done", "message": "すべての週の取り込みが完了しています", "remaining": 0}
 
-    # chunk 週だけ処理
-    targets = pending[:chunk]
     saved, errors = [], []
-    for monday, sunday in targets:
+    for monday, sunday in pending[:chunk]:
         try:
-            rows = fetch_page_stats(SITE_URL, monday, sunday, URL_PREFIX)
+            rows = fetch_page_stats(site["gsc_site_url"], monday, sunday, site["url_prefix"])
             if rows:
-                upsert_snapshots(rows, monday)
+                upsert_snapshots(rows, monday, site_id)
                 saved.append({"week": str(monday), "rows": len(rows)})
             time.sleep(0.3)
         except Exception as e:
             errors.append({"week": str(monday), "error": str(e)})
 
-    return {
-        "status": "in_progress",
-        "saved_this_call": saved,
-        "errors": errors,
-        "remaining_weeks": len(pending) - len(targets),
-        "message": f"残り {len(pending) - len(targets)} 週。このURLを引き続き叩いてください。",
-    }
-
+    return {"status": "in_progress", "saved_this_call": saved, "errors": errors, "remaining_weeks": len(pending) - len(pending[:chunk]), "message": f"残り {len(pending) - len(pending[:chunk])} 週"}
 
 @app.get("/api/backfill/status")
-def api_backfill_status():
-    """取り込み済み週数・期間をDBから確認する。"""
+def api_backfill_status(site_id: int = 1):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT
-                    COUNT(DISTINCT snapshot_date) AS weeks,
-                    MIN(snapshot_date)            AS oldest,
-                    MAX(snapshot_date)            AS newest,
-                    COUNT(*)                      AS total_rows
-                FROM rank_snapshots
-                WHERE page_url LIKE %s
-            """, (f"{URL_PREFIX}%",))
+                SELECT COUNT(DISTINCT snapshot_date), MIN(snapshot_date), MAX(snapshot_date), COUNT(*)
+                FROM rank_snapshots WHERE site_id = %s
+            """, (site_id,))
             row = cur.fetchone()
-    return {
-        "saved_weeks":  row[0],
-        "oldest_date":  str(row[1]) if row[1] else None,
-        "newest_date":  str(row[2]) if row[2] else None,
-        "total_rows":   row[3],
-    }
+    return {"saved_weeks": row[0], "oldest_date": str(row[1]) if row[1] else None, "newest_date": str(row[2]) if row[2] else None, "total_rows": row[3]}
 
+
+# ── 手動実行 ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/run")
-def api_run_post(background_tasks: BackgroundTasks):
-    return _trigger_run(background_tasks)
-
 @app.get("/api/run")
-def api_run_get(background_tasks: BackgroundTasks):
-    return _trigger_run(background_tasks)
-
-@app.get("/api/gsc/debug")
-def api_gsc_debug():
-    """GSC接続・プロパティ・データ取得を診断する。"""
-    import traceback
-    from datetime import date, timedelta
-    from .gsc_client import _build_service
-
-    result = {}
-    try:
-        service = _build_service()
-
-        # 1. 利用可能なプロパティ一覧
-        sites = service.sites().list().execute()
-        result["available_properties"] = [
-            s["siteUrl"] for s in sites.get("siteEntry", [])
-        ]
-
-        # 2. フィルターなしでデータ取得（直近7日）
-        end_date = date.today() - timedelta(days=3)
-        start_date = end_date - timedelta(days=6)
-        resp = service.searchanalytics().query(
-            siteUrl=SITE_URL,
-            body={
-                "startDate": start_date.isoformat(),
-                "endDate": end_date.isoformat(),
-                "dimensions": ["page"],
-                "rowLimit": 5,
-            }
-        ).execute()
-        result["sample_rows_no_filter"] = resp.get("rows", [])
-        result["date_range"] = f"{start_date} 〜 {end_date}"
-        result["site_url_used"] = SITE_URL
-
-    except Exception as e:
-        result["error"] = str(e)
-        result["traceback"] = traceback.format_exc()
-
-    return result
-
+def api_run(background_tasks: BackgroundTasks):
+    def _run():
+        from .main import run_weekly
+        run_weekly()
+    background_tasks.add_task(_run)
+    return {"status": "started", "message": "週次バッチを開始しました"}
 
 @app.get("/api/run/debug")
 def api_run_debug():
-    """バッチを同期実行してエラーを直接返す（デバッグ用）。"""
-    import traceback
-    import io, sys
+    import traceback, io, sys
     log_buffer = io.StringIO()
-
-    class TeeStream:
-        def write(self, msg):
-            log_buffer.write(msg)
-            sys.__stdout__.write(msg)
-        def flush(self):
-            sys.__stdout__.flush()
-
-    sys.stdout = TeeStream()
+    class Tee:
+        def write(self, m): log_buffer.write(m); sys.__stdout__.write(m)
+        def flush(self): sys.__stdout__.flush()
+    sys.stdout = Tee()
     try:
         from .main import run_weekly
         run_weekly()
@@ -481,9 +330,42 @@ def api_run_debug():
         return {"status": "ok", "log": log_buffer.getvalue()}
     except Exception as e:
         sys.stdout = sys.__stdout__
-        return JSONResponse({
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "log": log_buffer.getvalue(),
-        }, status_code=500)
+        return JSONResponse({"status": "error", "error": str(e), "traceback": traceback.format_exc(), "log": log_buffer.getvalue()}, status_code=500)
+
+
+# ── 診断 ──────────────────────────────────────────────────────────────────────
+
+@app.get("/api/health")
+def api_health():
+    try:
+        from .site_manager import get_all_sites
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT site_id, COUNT(*) FROM rank_snapshots GROUP BY site_id")
+                snapshots = {r[0]: r[1] for r in cur.fetchall()}
+                cur.execute("SELECT COUNT(*) FROM article_seasons")
+                season_count = cur.fetchone()[0]
+        return {"db": "ok", "sites": get_all_sites(), "snapshots_per_site": snapshots, "article_seasons_count": season_count}
+    except Exception as e:
+        return JSONResponse({"db": "error", "detail": str(e)}, status_code=500)
+
+@app.get("/api/gsc/debug")
+def api_gsc_debug(site_id: int = 1):
+    import traceback
+    from .gsc_client import _build_service
+    site = _get_site_or_404(site_id)
+    result = {}
+    try:
+        service = _build_service()
+        sites_resp = service.sites().list().execute()
+        result["available_properties"] = [s["siteUrl"] for s in sites_resp.get("siteEntry", [])]
+        end_date   = date.today() - timedelta(days=3)
+        start_date = end_date - timedelta(days=6)
+        resp = service.searchanalytics().query(siteUrl=site["gsc_site_url"], body={"startDate": start_date.isoformat(), "endDate": end_date.isoformat(), "dimensions": ["page"], "rowLimit": 5}).execute()
+        result["sample_rows"] = resp.get("rows", [])
+        result["date_range"]  = f"{start_date} 〜 {end_date}"
+        result["site_url_used"] = site["gsc_site_url"]
+    except Exception as e:
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+    return result

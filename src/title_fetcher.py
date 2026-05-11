@@ -35,7 +35,7 @@ def fetch_titles_for_urls(urls: list[str], sleep_sec: float = 0.3) -> dict[str, 
     return results
 
 
-def upsert_titles(titles: dict[str, str]):
+def upsert_titles(titles: dict[str, str], site_id: int = 1):
     if not titles:
         return
     import psycopg2.extras
@@ -44,29 +44,28 @@ def upsert_titles(titles: dict[str, str]):
             psycopg2.extras.execute_values(
                 cur,
                 """
-                INSERT INTO page_titles (page_url, title)
+                INSERT INTO page_titles (site_id, page_url, title)
                 VALUES %s
-                ON CONFLICT (page_url) DO UPDATE SET
+                ON CONFLICT (site_id, page_url) DO UPDATE SET
                     title = EXCLUDED.title,
                     updated_at = NOW()
                 """,
-                list(titles.items()),
+                [(site_id, url, title) for url, title in titles.items()],
             )
 
 
-def get_titles(page_urls: list[str]) -> dict[str, str]:
+def get_titles(page_urls: list[str], site_id: int = 1) -> dict[str, str]:
     """DBからタイトルを取得する。なければURL末尾をスラッグとして返す。"""
     if not page_urls:
         return {}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT page_url, title FROM page_titles WHERE page_url = ANY(%s)",
-                (page_urls,),
+                "SELECT page_url, title FROM page_titles WHERE site_id = %s AND page_url = ANY(%s)",
+                (site_id, page_urls),
             )
             db_titles = {r[0]: r[1] for r in cur.fetchall()}
 
-    # DBにないURLはスラッグをフォールバックとして使用
     result = {}
     for url in page_urls:
         if url in db_titles:

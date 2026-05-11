@@ -32,7 +32,7 @@ def run_migrations():
         print(f"migration applied: {filename}")
 
 
-def upsert_snapshots(rows: list[dict], snapshot_date: date):
+def upsert_snapshots(rows: list[dict], snapshot_date: date, site_id: int = 1):
     if not rows:
         return
     with get_conn() as conn:
@@ -41,9 +41,9 @@ def upsert_snapshots(rows: list[dict], snapshot_date: date):
                 cur,
                 """
                 INSERT INTO rank_snapshots
-                    (page_url, snapshot_date, week_of_year, month, clicks, impressions, ctr, avg_position)
+                    (site_id, page_url, snapshot_date, week_of_year, month, clicks, impressions, ctr, avg_position)
                 VALUES %s
-                ON CONFLICT (page_url, snapshot_date) DO UPDATE SET
+                ON CONFLICT (site_id, page_url, snapshot_date) DO UPDATE SET
                     week_of_year  = EXCLUDED.week_of_year,
                     month         = EXCLUDED.month,
                     clicks        = EXCLUDED.clicks,
@@ -53,6 +53,7 @@ def upsert_snapshots(rows: list[dict], snapshot_date: date):
                 """,
                 [
                     (
+                        site_id,
                         r["page_url"],
                         snapshot_date,
                         snapshot_date.isocalendar()[1],
@@ -67,10 +68,8 @@ def upsert_snapshots(rows: list[dict], snapshot_date: date):
             )
 
 
-def fetch_yoy_pairs(snapshot_date: date, url_prefix: str) -> list[dict]:
+def fetch_yoy_pairs(snapshot_date: date, url_prefix: str, site_id: int = 1) -> list[dict]:
     """今週と前年同週のデータをページ単位でペアにして返す。"""
-    week = snapshot_date.isocalendar()[1]
-    month = snapshot_date.month
     year = snapshot_date.year
 
     with get_conn() as conn:
@@ -88,19 +87,21 @@ def fetch_yoy_pairs(snapshot_date: date, url_prefix: str) -> list[dict]:
                     prev.snapshot_date AS prev_date
                 FROM rank_snapshots cur
                 LEFT JOIN rank_snapshots prev
-                    ON prev.page_url    = cur.page_url
+                    ON prev.page_url      = cur.page_url
+                    AND prev.site_id      = cur.site_id
                     AND prev.week_of_year = cur.week_of_year
                     AND EXTRACT(YEAR FROM prev.snapshot_date) = %s
                 WHERE cur.snapshot_date = %s
+                  AND cur.site_id       = %s
                   AND cur.page_url LIKE %s
                 ORDER BY cur.impressions DESC
                 """,
-                (year - 1, snapshot_date, f"{url_prefix}%"),
+                (year - 1, snapshot_date, site_id, f"{url_prefix}%"),
             )
             return [dict(r) for r in cur.fetchall()]
 
 
-def upsert_article_seasons(seasons: list[dict]):
+def upsert_article_seasons(seasons: list[dict], site_id: int = 1):
     if not seasons:
         return
     with get_conn() as conn:
@@ -108,23 +109,23 @@ def upsert_article_seasons(seasons: list[dict]):
             psycopg2.extras.execute_values(
                 cur,
                 """
-                INSERT INTO article_seasons (page_url, peak_months)
+                INSERT INTO article_seasons (site_id, page_url, peak_months)
                 VALUES %s
-                ON CONFLICT (page_url) DO UPDATE SET
+                ON CONFLICT (site_id, page_url) DO UPDATE SET
                     peak_months = EXCLUDED.peak_months,
                     updated_at  = NOW()
                 """,
-                [(s["page_url"], s["peak_months"]) for s in seasons],
+                [(site_id, s["page_url"], s["peak_months"]) for s in seasons],
             )
 
 
-def fetch_peak_months(page_urls: list[str]) -> dict[str, list[int]]:
+def fetch_peak_months(page_urls: list[str], site_id: int = 1) -> dict[str, list[int]]:
     if not page_urls:
         return {}
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT page_url, peak_months FROM article_seasons WHERE page_url = ANY(%s)",
-                (page_urls,),
+                "SELECT page_url, peak_months FROM article_seasons WHERE site_id = %s AND page_url = ANY(%s)",
+                (site_id, page_urls),
             )
             return {r["page_url"]: r["peak_months"] for r in cur.fetchall()}
