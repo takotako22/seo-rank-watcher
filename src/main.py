@@ -14,12 +14,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .db import run_migrations, upsert_snapshots, fetch_yoy_pairs, fetch_peak_months
+from .db import run_migrations, upsert_snapshots, fetch_yoy_pairs, fetch_peak_months, upsert_ga4_snapshots
 from .gsc_client import fetch_last_week_stats
 from .analyzer import analyze, build_summary
 from .slack_notifier import send
 from .season_estimator import estimate_and_save
-from .recommender import fetch_recommendations
+from .recommender import fetch_rewrite_recommendations
 from .backfill import run_backfill
 
 
@@ -56,12 +56,21 @@ def run_weekly():
         f"total={summary.get('total', 0)}"
     )
 
-    print("6. 記事作成レコメンド生成中...")
-    recommendations = fetch_recommendations(SITE_URL, URL_PREFIX, start_date, end_date)
-    print(f"   レコメンド件数: {len(recommendations)}")
+    print("6. GA4データ取得中...")
+    ga4_property_id = os.environ.get("GA4_PROPERTY_ID", "")
+    if ga4_property_id:
+        try:
+            from .ga4_client import fetch_page_stats_ga4
+            ga4_rows = fetch_page_stats_ga4(ga4_property_id, URL_PREFIX, start_date, end_date)
+            upsert_ga4_snapshots(ga4_rows, start_date)
+            print(f"   GA4取得件数: {len(ga4_rows)} 記事")
+        except Exception as e:
+            print(f"   GA4取得スキップ（エラー）: {e}")
+    else:
+        print("   GA4_PROPERTY_ID 未設定のためスキップ")
 
     print("7. Slack通知送信中...")
-    send(alerts, start_date, summary, recommendations)
+    send(alerts, start_date, summary, [])
     print("=== 完了 ===")
 
 

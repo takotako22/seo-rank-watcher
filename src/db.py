@@ -129,3 +129,84 @@ def fetch_peak_months(page_urls: list[str], site_id: int = 1) -> dict[str, list[
                 (site_id, page_urls),
             )
             return {r["page_url"]: r["peak_months"] for r in cur.fetchall()}
+
+
+# ── GA4 ──────────────────────────────────────────────────────────────────────
+
+def upsert_ga4_snapshots(rows: list[dict], snapshot_date: date, site_id: int = 1):
+    """GA4の週次スナップショットを保存する。"""
+    if not rows:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """
+                INSERT INTO ga4_snapshots
+                    (site_id, page_url, snapshot_date,
+                     sessions, pageviews, engagement_rate, avg_engagement_time_sec)
+                VALUES %s
+                ON CONFLICT (site_id, page_url, snapshot_date) DO UPDATE SET
+                    sessions               = EXCLUDED.sessions,
+                    pageviews              = EXCLUDED.pageviews,
+                    engagement_rate        = EXCLUDED.engagement_rate,
+                    avg_engagement_time_sec = EXCLUDED.avg_engagement_time_sec
+                """,
+                [
+                    (
+                        site_id,
+                        r["page_url"],
+                        snapshot_date,
+                        r["sessions"],
+                        r["pageviews"],
+                        r["engagement_rate"],
+                        r["avg_engagement_time_sec"],
+                    )
+                    for r in rows
+                ],
+            )
+
+
+def get_ga4_stats(
+    page_urls: list[str],
+    snapshot_date: date,
+    site_id: int = 1,
+) -> dict[str, dict]:
+    """
+    指定日に最も近いGA4スナップショットをURLリストで取得する。
+    Returns: {page_url: {sessions, pageviews, engagement_rate, avg_engagement_time_sec}}
+    """
+    if not page_urls:
+        return {}
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # 指定日以前の最新スナップショット日を取得
+            cur.execute(
+                """
+                SELECT MAX(snapshot_date) FROM ga4_snapshots
+                WHERE site_id = %s AND snapshot_date <= %s
+                """,
+                (site_id, snapshot_date),
+            )
+            row = cur.fetchone()
+            nearest_date = row["max"] if row else None
+            if not nearest_date:
+                return {}
+
+            cur.execute(
+                """
+                SELECT page_url, sessions, pageviews, engagement_rate, avg_engagement_time_sec
+                FROM ga4_snapshots
+                WHERE site_id = %s AND snapshot_date = %s AND page_url = ANY(%s)
+                """,
+                (site_id, nearest_date, page_urls),
+            )
+            return {
+                r["page_url"]: {
+                    "sessions":               int(r["sessions"] or 0),
+                    "pageviews":              int(r["pageviews"] or 0),
+                    "engagement_rate":        float(r["engagement_rate"] or 0),
+                    "avg_engagement_time_sec": float(r["avg_engagement_time_sec"] or 0),
+                }
+                for r in cur.fetchall()
+            }

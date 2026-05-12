@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from .db import get_conn, fetch_yoy_pairs, fetch_peak_months
+from .db import get_conn, fetch_yoy_pairs, fetch_peak_months, get_ga4_stats, upsert_ga4_snapshots
 from .analyzer import analyze, build_summary
 
 app = FastAPI(title="SEO Rank Watcher")
@@ -209,7 +209,13 @@ def api_rec_detail(site_id: int = 1, page_url: str = "", pattern: str = "ctr_imp
     if not page_url:
         raise HTTPException(status_code=400, detail="page_url is required")
     from .rewrite_advisor import get_rewrite_advice
-    return get_rewrite_advice(site["gsc_site_url"], page_url, pattern, site_id)
+    advice = get_rewrite_advice(site["gsc_site_url"], page_url, pattern, site_id)
+
+    # GA4データを付加（取得できなければ空）
+    latest = _latest_snapshot_date(site_id)
+    ga4 = get_ga4_stats([page_url], latest or date.today(), site_id) if latest else {}
+    advice["ga4"] = ga4.get(page_url)
+    return advice
 
 
 @app.get("/api/recommendations")
@@ -326,6 +332,83 @@ def api_backfill_status(site_id: int = 1):
             """, (site_id,))
             row = cur.fetchone()
     return {"saved_weeks": row[0], "oldest_date": str(row[1]) if row[1] else None, "newest_date": str(row[2]) if row[2] else None, "total_rows": row[3]}
+
+
+# ── GA4 バックフィル ──────────────────────────────────────────────────────────
+
+@app.get("/api/ga4/backfill")
+def api_ga4_backfill(site_id: int = 1, months: int = 3, chunk: int = 4):
+    """GA4の過去データを週単位で取り込む。"""
+    import time
+    from .ga4_client import fetch_page_stats_ga4
+
+    site = _get_site_or_404(site_id)
+    if not site.get("ga4_property_id"):
+        raise HTTPException(status_code=400, detail="GA4 property ID が未設定です")
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT snapshot_date FROM ga4_snapshots WHERE site_id = %s GROUP BY snapshot_date",
+                (site_id,),
+            )
+            done_dates = {row[0] for row in cur.fetchall()}
+
+    today   = date.today()
+    cutoff  = today - timedelta(days=3)
+    days_since_sunday = (cutoff.weekday() + 1) % 7
+    latest_sunday = cutoff - timedelta(days=days_since_sunday)
+    earliest = today - timedelta(days=30 * months)
+
+    pending = []
+    sunday = latest_sunday
+    while sunday >= earliest:
+        monday = sunday - timedelta(days=6)
+        if monday not in done_dates:
+            pending.append((monday, sunday))
+        sunday -= timedelta(days=7)
+
+    if not pending:
+        return {"status": "done", "message": "すべての週の取り込みが完了しています", "remaining": 0}
+
+    saved, errors = [], []
+    for monday, sunday in pending[:chunk]:
+        try:
+            rows = fetch_page_stats_ga4(site["ga4_property_id"], site["url_prefix"], monday, sunday)
+            if rows:
+                upsert_ga4_snapshots(rows, monday, site_id)
+                saved.append({"week": str(monday), "rows": len(rows)})
+            time.sleep(0.3)
+        except Exception as e:
+            errors.append({"week": str(monday), "error": str(e)})
+
+    remaining = len(pending) - len(pending[:chunk])
+    return {
+        "status": "in_progress" if remaining > 0 else "done",
+        "saved_this_call": saved,
+        "errors": errors,
+        "remaining_weeks": remaining,
+        "message": f"残り {remaining} 週",
+    }
+
+@app.get("/api/ga4/status")
+def api_ga4_status(site_id: int = 1):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT snapshot_date), MIN(snapshot_date), MAX(snapshot_date), COUNT(*)
+                FROM ga4_snapshots WHERE site_id = %s
+                """,
+                (site_id,),
+            )
+            row = cur.fetchone()
+    return {
+        "saved_weeks":  row[0],
+        "oldest_date":  str(row[1]) if row[1] else None,
+        "newest_date":  str(row[2]) if row[2] else None,
+        "total_rows":   row[3],
+    }
 
 
 # ── 手動実行 ──────────────────────────────────────────────────────────────────

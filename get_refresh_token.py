@@ -2,13 +2,18 @@
 OAuth2のリフレッシュトークンを取得するワンタイムスクリプト。
 ローカルで一度だけ実行し、得られたトークンをRailwayの環境変数に設定する。
 
+GSC（Search Console）と GA4（Analytics）両方のスコープを含む。
+
 使い方:
   pip install google-auth-oauthlib
   python get_refresh_token.py
 """
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "https://www.googleapis.com/auth/analytics.readonly",
+]
 
 CLIENT_CONFIG = {
     "installed": {
