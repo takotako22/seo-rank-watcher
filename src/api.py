@@ -345,6 +345,18 @@ def api_traffic(site_id: int = 1, limit: int = 50):
     """GA4セッション数 Top N 記事と前週比・GSC順位を返す。"""
     site = _get_site_or_404(site_id)
 
+    # ga4_snapshotsテーブル未存在やデータなしを安全に処理
+    try:
+        _check = None
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM ga4_snapshots LIMIT 1")
+                _check = cur.fetchone()
+        if _check is None:
+            return {"snapshot_date": None, "prev_date": None, "articles": []}
+    except Exception:
+        return {"snapshot_date": None, "prev_date": None, "articles": []}
+
     with get_conn() as conn:
         with conn.cursor() as cur:
             # 最新GA4日付

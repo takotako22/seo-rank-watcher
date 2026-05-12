@@ -590,17 +590,25 @@ function renderRecTab(tab) {
 }
 
 async function loadTraffic() {
-  const limit = document.getElementById('traffic-limit').value;
-  const res = await fetch(`/api/traffic?site_id=${currentSiteId}&limit=${limit}`);
-  if (!res.ok) return;
-  const data = await res.json();
-
-  const noData  = document.getElementById('traffic-no-data');
-  const wrap    = document.getElementById('traffic-table-wrap');
-  const tbody   = document.getElementById('traffic-tbody');
+  const limit    = document.getElementById('traffic-limit').value;
+  const noData   = document.getElementById('traffic-no-data');
+  const wrap     = document.getElementById('traffic-table-wrap');
+  const tbody    = document.getElementById('traffic-tbody');
   const periodEl = document.getElementById('traffic-period');
 
-  if (!data.snapshot_date || data.articles.length === 0) {
+  let data;
+  try {
+    const res = await fetch(`/api/traffic?site_id=${currentSiteId}&limit=${limit}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch(e) {
+    noData.classList.remove('hidden');
+    wrap.classList.add('hidden');
+    periodEl.textContent = 'GA4データなし';
+    return;
+  }
+
+  if (!data.snapshot_date || !data.articles || data.articles.length === 0) {
     noData.classList.remove('hidden');
     wrap.classList.add('hidden');
     periodEl.textContent = 'GA4データなし';
