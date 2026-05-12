@@ -3,310 +3,408 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEO順位ウォッチ | GreenSnap</title>
+<title>SEO順位ウォッチ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  body { font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; background: #f5f7f2; }
-  .card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-  .badge-critical { background: #fee2e2; color: #dc2626; }
-  .badge-warning  { background: #fef9c3; color: #ca8a04; }
-  .badge-watch    { background: #dbeafe; color: #2563eb; }
-  .badge-good     { background: #dcfce7; color: #16a34a; }
+  * { font-family: 'Inter', 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+  body { background: #f8fafc; color: #1e293b; }
+
+  /* Sidebar */
+  .sidebar { background: #0f172a; }
+  .sidebar-link { color: #94a3b8; border-radius: 8px; transition: all 0.15s; }
+  .sidebar-link:hover { background: rgba(255,255,255,0.07); color: #f1f5f9; }
+  .sidebar-link.active { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .sidebar-link.active .nav-icon { color: #4ade80; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .card-hover:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.06); transition: all 0.2s; }
+
+  /* KPI cards */
+  .kpi-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; }
+
+  /* Badges */
+  .badge-critical { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .badge-warning  { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+  .badge-watch    { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+  .badge-good     { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
   .trend-up   { color: #16a34a; }
   .trend-down { color: #dc2626; }
-  .trend-flat { color: #9ca3af; }
-  .sidebar-link { transition: all 0.15s; border-radius: 8px; }
-  .sidebar-link:hover, .sidebar-link.active { background: #f0fdf4; color: #16a34a; }
-  .tab-btn { border-bottom: 2px solid transparent; padding: 4px 12px; cursor: pointer; }
-  .tab-btn.active { border-color: #16a34a; color: #16a34a; font-weight: 600; }
-  .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 6px; }
+  .trend-flat { color: #94a3b8; }
+
+  /* Tabs */
+  .tab-btn { border-bottom: 2px solid transparent; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #64748b; transition: all 0.15s; white-space: nowrap; }
+  .tab-btn:hover { color: #334155; }
+  .tab-btn.active { border-color: #22c55e; color: #16a34a; font-weight: 600; }
+
+  /* Skeleton */
+  .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
   @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-  .spinning { animation: spin 1s linear infinite; display: inline-block; }
+
+  /* Spinner */
+  .spinning { animation: spin 0.8s linear infinite; display: inline-block; }
   @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50; display:flex; align-items:center; justify-content:center; }
-  .modal-box { background:white; border-radius:16px; padding:28px; width:480px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.15); }
+
+  /* Modal */
+  .modal-overlay { position:fixed; inset:0; background:rgba(15,23,42,0.5); backdrop-filter: blur(4px); z-index:50; display:flex; align-items:center; justify-content:center; }
+  .modal-box { background:#fff; border-radius:18px; padding:28px; width:540px; max-width:92vw; box-shadow:0 24px 64px rgba(0,0,0,0.18); border: 1px solid #e2e8f0; }
+
+  /* Table */
+  .data-table th { font-size: 11px; font-weight: 500; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 10px; }
+  .data-table tbody tr { border-top: 1px solid #f1f5f9; transition: background 0.1s; }
+  .data-table tbody tr:hover { background: #f8fafc; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+  /* Select */
+  select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px !important; }
 </style>
 </head>
 <body class="min-h-screen">
 
 <!-- Sidebar -->
-<div class="fixed left-0 top-0 h-full w-56 bg-white border-r border-gray-100 flex flex-col p-4 z-20">
-  <div class="flex items-center gap-2 mb-8 px-2">
-    <span class="text-2xl">🌱</span>
+<div class="sidebar fixed left-0 top-0 h-full w-60 flex flex-col p-4 z-20">
+  <div class="flex items-center gap-3 mb-8 px-3 pt-2">
+    <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg shadow-green-500/30">S</div>
     <div>
-      <div class="font-bold text-gray-800 text-sm">SEO順位ウォッチ</div>
-      <div class="text-xs text-gray-400">GreenSnap STORE</div>
+      <div class="font-semibold text-white text-sm leading-tight">SEO Watcher</div>
+      <div class="text-xs text-slate-500 mt-0.5">GreenSnap</div>
     </div>
   </div>
-  <nav class="flex flex-col gap-1 text-sm text-gray-600">
-    <a href="#top"      class="sidebar-link active flex items-center gap-2 px-3 py-2">📊 ダッシュボード</a>
-    <a href="#alerts"  class="sidebar-link flex items-center gap-2 px-3 py-2">🔴 要対策記事</a>
-    <a href="#traffic" class="sidebar-link flex items-center gap-2 px-3 py-2">🚦 トラフィック</a>
-    <a href="#trend"   class="sidebar-link flex items-center gap-2 px-3 py-2">📈 順位トレンド</a>
-    <a href="#recs"    class="sidebar-link flex items-center gap-2 px-3 py-2">✍️ 記事レコメンド</a>
-    <a href="#season"  class="sidebar-link flex items-center gap-2 px-3 py-2">🗓️ シーズン</a>
+
+  <nav class="flex flex-col gap-0.5 text-sm flex-1">
+    <a href="#top"     class="sidebar-link flex items-center gap-3 px-3 py-2.5 active">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke-width="2"/></svg>
+      ダッシュボード
+    </a>
+    <a href="#alerts"  class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      要対策記事
+    </a>
+    <a href="#traffic" class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+      トラフィック
+    </a>
+    <a href="#recs"    class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+      リライトレコメンド
+    </a>
+    <a href="#trend"   class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      順位トレンド
+    </a>
+    <a href="#season"  class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/></svg>
+      シーズン
+    </a>
   </nav>
-  <div class="mt-auto px-3 py-2 text-xs text-gray-400" id="last-updated">読み込み中...</div>
+
+  <div class="px-3 py-3 border-t border-slate-800">
+    <div class="text-xs text-slate-500" id="last-updated">—</div>
+  </div>
 </div>
 
 <!-- Main -->
-<div class="ml-56 p-6" id="top">
+<div class="ml-60 min-h-screen">
 
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-4">
-      <div>
-        <h1 class="text-xl font-bold text-gray-800">ダッシュボード</h1>
-        <p class="text-sm text-gray-500" id="header-period">読み込み中...</p>
-      </div>
-      <select id="site-select" onchange="onSiteChange()"
-        class="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 bg-white min-w-[180px]">
-        <option value="">読み込み中...</option>
-      </select>
-    </div>
-    <div class="flex gap-2">
-      <button onclick="openSiteModal()"
-        class="text-sm px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center gap-1">
-        ⚙️ サイト管理
-      </button>
-      <button onclick="runBatch()" id="run-btn"
-        class="text-sm px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1">
-        🔄 今すぐ実行
-      </button>
-    </div>
-  </div>
-
-  <!-- KPI Cards -->
-  <div class="grid grid-cols-4 gap-4 mb-6">
-    <div class="card p-4">
-      <div class="text-xs text-gray-500 mb-1">監視記事数</div>
-      <div class="text-2xl font-bold text-gray-800" id="kpi-total">—</div>
-    </div>
-    <div class="card p-4">
-      <div class="text-xs text-gray-500 mb-1">要対策（ピーク期×下落）</div>
-      <div class="text-2xl font-bold text-red-500" id="kpi-critical">—</div>
-    </div>
-    <div class="card p-4">
-      <div class="text-xs text-gray-500 mb-1">順位UP ↑</div>
-      <div class="text-2xl font-bold text-green-500" id="kpi-improved">—</div>
-    </div>
-    <div class="card p-4">
-      <div class="text-xs text-gray-500 mb-1">順位DOWN ↓</div>
-      <div class="text-2xl font-bold text-gray-600" id="kpi-declined">—</div>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-3 gap-6 mb-6" id="alerts">
-
-    <!-- Alert List -->
-    <div class="col-span-2 card p-5">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="font-semibold text-gray-800">アラート一覧</h2>
-        <div class="flex gap-1 text-xs" id="tab-bar">
-          <button class="tab-btn active" onclick="switchTab('all',this)">すべて</button>
-          <button class="tab-btn text-gray-500" onclick="switchTab('critical',this)">🔴 要対策</button>
-          <button class="tab-btn text-gray-500" onclick="switchTab('warning',this)">🟡 要監視</button>
-          <button class="tab-btn text-gray-500" onclick="switchTab('watch',this)">🔵 事前対策</button>
+  <!-- Top Bar -->
+  <div class="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div>
+          <h1 class="text-base font-semibold text-slate-800">ダッシュボード</h1>
+          <p class="text-xs text-slate-400 mt-0.5" id="header-period">読み込み中...</p>
         </div>
-      </div>
-      <div id="alert-list" class="space-y-3">
-        <div class="skeleton h-20 w-full"></div>
-        <div class="skeleton h-20 w-full"></div>
-        <div class="skeleton h-20 w-full"></div>
-      </div>
-    </div>
-
-    <!-- Right Column -->
-    <div class="flex flex-col gap-4">
-      <!-- Season -->
-      <div class="card p-5" id="season">
-        <h2 class="font-semibold text-gray-800 mb-3">🗓️ 今月の需要ピーク記事</h2>
-        <div id="season-list" class="space-y-2">
-          <div class="skeleton h-5 w-full"></div>
-          <div class="skeleton h-5 w-full"></div>
-          <div class="skeleton h-5 w-full"></div>
-        </div>
-      </div>
-      <!-- Top5 -->
-      <div class="card p-5">
-        <h2 class="font-semibold text-gray-800 mb-3">📈 表示回数 Top5</h2>
-        <div id="top5-list" class="space-y-2.5">
-          <div class="skeleton h-8 w-full"></div>
-          <div class="skeleton h-8 w-full"></div>
-          <div class="skeleton h-8 w-full"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Recommendations -->
-  <div class="card p-5 mb-6" id="recs">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h2 class="font-semibold text-gray-800">✍️ リライト優先レコメンド</h2>
-        <p class="text-xs text-gray-500 mt-0.5">既存記事の「勝てるパターン」をDBから自動検出</p>
-      </div>
-      <span class="text-xs text-gray-400" id="rec-count"></span>
-    </div>
-    <!-- タブ -->
-    <div class="flex gap-1 text-xs mb-4 border-b border-gray-100 pb-2" id="rec-tab-bar">
-      <button class="tab-btn active" onclick="switchRecTab('ctr_improve',this)">📈 CTR改善</button>
-      <button class="tab-btn text-gray-500" onclick="switchRecTab('near_top',this)">🎯 上位押し上げ</button>
-      <button class="tab-btn text-gray-500" onclick="switchRecTab('trending_up',this)">⬆️ 上昇トレンド</button>
-      <button class="tab-btn text-gray-500" onclick="switchRecTab('pre_season',this)">🗓️ 来季先行</button>
-    </div>
-    <!-- パターン説明 -->
-    <p class="text-xs text-gray-400 mb-3" id="rec-pattern-desc"></p>
-    <!-- リスト -->
-    <div id="rec-list" class="space-y-2">
-      <div class="skeleton h-10 w-full rounded-lg"></div>
-      <div class="skeleton h-10 w-full rounded-lg"></div>
-      <div class="skeleton h-10 w-full rounded-lg"></div>
-    </div>
-  </div>
-
-  <!-- Traffic Top50 -->
-  <div class="card p-5 mb-6" id="traffic">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h2 class="font-semibold text-gray-800">🚦 トラフィック Top記事（GA4セッション数）</h2>
-        <p class="text-xs text-gray-500 mt-0.5" id="traffic-period">読み込み中...</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <select id="traffic-limit" onchange="loadTraffic()"
-          class="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600">
-          <option value="20">Top 20</option>
-          <option value="50" selected>Top 50</option>
-          <option value="100">Top 100</option>
+        <div class="h-6 w-px bg-slate-200"></div>
+        <select id="site-select" onchange="onSiteChange()"
+          class="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 bg-white min-w-[180px] focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+          <option value="">読み込み中...</option>
         </select>
-        <div class="flex gap-2 text-xs text-gray-400">
-          <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-green-400"></span>増加</span>
-          <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-red-400"></span>減少</span>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="openSiteModal()"
+          class="text-sm px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 flex items-center gap-1.5 transition-all">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
+          サイト管理
+        </button>
+        <button onclick="runBatch()" id="run-btn"
+          class="text-sm px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1.5 transition-all shadow-sm shadow-green-600/20 font-medium">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          今すぐ実行
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="px-8 py-6" id="top">
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      <div class="kpi-card">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wide">監視記事数</span>
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+        </div>
+        <div class="text-2xl font-bold text-slate-800" id="kpi-total">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wide">要対策</span>
+          <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          </div>
+        </div>
+        <div class="text-2xl font-bold text-red-500" id="kpi-critical">—</div>
+        <div class="text-xs text-slate-400 mt-1">ピーク期 × 下落</div>
+      </div>
+      <div class="kpi-card">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wide">順位UP</span>
+          <div class="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+          </div>
+        </div>
+        <div class="text-2xl font-bold text-green-600" id="kpi-improved">—</div>
+        <div class="text-xs text-slate-400 mt-1">前年比で改善</div>
+      </div>
+      <div class="kpi-card">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wide">順位DOWN</span>
+          <div class="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17H5m0 0V9m0 8l8-8 4 4 6-6"/></svg>
+          </div>
+        </div>
+        <div class="text-2xl font-bold text-orange-500" id="kpi-declined">—</div>
+        <div class="text-xs text-slate-400 mt-1">前年比で下落</div>
+      </div>
+    </div>
+
+    <!-- Alert + Season -->
+    <div class="grid grid-cols-3 gap-5 mb-5" id="alerts">
+
+      <!-- Alert List -->
+      <div class="col-span-2 card p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-slate-800 text-sm">アラート一覧</h2>
+          <div class="flex gap-0 text-sm border-b border-slate-100" id="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('all',this)">すべて</button>
+            <button class="tab-btn" onclick="switchTab('critical',this)">要対策</button>
+            <button class="tab-btn" onclick="switchTab('warning',this)">要監視</button>
+            <button class="tab-btn" onclick="switchTab('watch',this)">事前対策</button>
+          </div>
+        </div>
+        <div id="alert-list" class="space-y-2.5">
+          <div class="skeleton h-16 w-full"></div>
+          <div class="skeleton h-16 w-full"></div>
+          <div class="skeleton h-16 w-full"></div>
+        </div>
+      </div>
+
+      <!-- Right: Season + Top5 -->
+      <div class="flex flex-col gap-4">
+        <div class="card p-5" id="season">
+          <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+            <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/></svg>
+            今月の需要ピーク
+          </h2>
+          <div id="season-list" class="space-y-2">
+            <div class="skeleton h-5 w-full"></div>
+            <div class="skeleton h-5 w-full"></div>
+            <div class="skeleton h-5 w-full"></div>
+          </div>
+        </div>
+        <div class="card p-5">
+          <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline stroke-linecap="round" stroke-linejoin="round" stroke-width="2" points="17 6 23 6 23 12"/></svg>
+            表示回数 Top 5
+          </h2>
+          <div id="top5-list" class="space-y-2.5">
+            <div class="skeleton h-9 w-full"></div>
+            <div class="skeleton h-9 w-full"></div>
+            <div class="skeleton h-9 w-full"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- GA4未設定時メッセージ -->
-    <div id="traffic-no-data" class="hidden text-center py-10 text-sm text-gray-400">
-      GA4データがありません。<br>
-      ⚙️ サイト管理でGA4プロパティIDを設定し、<code class="bg-gray-100 px-1 rounded">/api/ga4/backfill</code> を実行してください。
+    <!-- Recommendations -->
+    <div class="card p-5 mb-5" id="recs">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="font-semibold text-slate-800 text-sm">リライト優先レコメンド</h2>
+          <p class="text-xs text-slate-400 mt-0.5">既存記事の「勝てるパターン」をDBから自動検出</p>
+        </div>
+        <span class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full font-medium" id="rec-count"></span>
+      </div>
+      <div class="flex gap-0 text-sm border-b border-slate-100 mb-4" id="rec-tab-bar">
+        <button class="tab-btn active" onclick="switchRecTab('ctr_improve',this)">CTR改善</button>
+        <button class="tab-btn" onclick="switchRecTab('near_top',this)">上位押し上げ</button>
+        <button class="tab-btn" onclick="switchRecTab('trending_up',this)">上昇トレンド</button>
+        <button class="tab-btn" onclick="switchRecTab('pre_season',this)">来季先行</button>
+      </div>
+      <p class="text-xs text-slate-400 mb-3 leading-relaxed" id="rec-pattern-desc"></p>
+      <div id="rec-list" class="space-y-2">
+        <div class="skeleton h-12 w-full rounded-xl"></div>
+        <div class="skeleton h-12 w-full rounded-xl"></div>
+        <div class="skeleton h-12 w-full rounded-xl"></div>
+      </div>
     </div>
 
-    <!-- テーブル -->
-    <div id="traffic-table-wrap">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-xs text-gray-400 border-b border-gray-100">
-            <th class="text-left pb-2 font-normal w-8">#</th>
-            <th class="text-left pb-2 font-normal">記事</th>
-            <th class="text-right pb-2 font-normal w-24">セッション</th>
-            <th class="text-right pb-2 font-normal w-20">前週比</th>
-            <th class="text-right pb-2 font-normal w-16">エンゲージ</th>
-            <th class="text-right pb-2 font-normal w-16">読了時間</th>
-            <th class="text-right pb-2 font-normal w-16">GSC順位</th>
-          </tr>
-        </thead>
-        <tbody id="traffic-tbody" class="divide-y divide-gray-50">
-          <tr><td colspan="7" class="py-3 text-center text-xs text-gray-300">読み込み中...</td></tr>
-        </tbody>
-      </table>
+    <!-- Traffic Top -->
+    <div class="card p-5 mb-5" id="traffic">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="font-semibold text-slate-800 text-sm">トラフィック Top記事 <span class="text-slate-400 font-normal">GA4セッション数</span></h2>
+          <p class="text-xs text-slate-400 mt-0.5" id="traffic-period">読み込み中...</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <select id="traffic-limit" onchange="loadTraffic()"
+            class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+            <option value="20">Top 20</option>
+            <option value="50" selected>Top 50</option>
+            <option value="100">Top 100</option>
+          </select>
+          <div class="flex gap-3 text-xs text-slate-400">
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>増加</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-400 inline-block"></span>減少</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="traffic-no-data" class="hidden text-center py-12 text-sm text-slate-400">
+        <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+          <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        </div>
+        GA4データがありません<br>
+        <span class="text-xs text-slate-300 mt-1 block">サイト管理でGA4プロパティIDを設定し、バックフィルを実行してください</span>
+      </div>
+
+      <div id="traffic-table-wrap" class="overflow-x-auto">
+        <table class="w-full data-table">
+          <thead>
+            <tr>
+              <th class="text-left w-8">#</th>
+              <th class="text-left">記事</th>
+              <th class="text-right w-28">セッション</th>
+              <th class="text-right w-24">前週比</th>
+              <th class="text-right w-20">エンゲージ</th>
+              <th class="text-right w-20">読了時間</th>
+              <th class="text-right w-20">GSC順位</th>
+            </tr>
+          </thead>
+          <tbody id="traffic-tbody">
+            <tr><td colspan="7" class="py-6 text-center text-xs text-slate-300">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
+
+    <!-- Trend Chart -->
+    <div class="card p-5" id="trend">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="font-semibold text-slate-800 text-sm">週次トレンド</h2>
+          <p class="text-xs text-slate-400 mt-0.5">表示回数 Top 5 記事</p>
+        </div>
+        <select id="weeks-select" onchange="loadTrend()" class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+          <option value="12">過去12週</option>
+          <option value="26">過去26週</option>
+          <option value="52">過去52週</option>
+        </select>
+      </div>
+      <canvas id="trendChart" height="70"></canvas>
+    </div>
+
   </div>
-
-  <!-- Trend Chart -->
-  <div class="card p-5" id="trend">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-semibold text-gray-800">📊 週次トレンド（表示回数 Top5記事）</h2>
-      <select id="weeks-select" onchange="loadTrend()" class="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600">
-        <option value="12">過去12週</option>
-        <option value="26">過去26週</option>
-        <option value="52">過去52週</option>
-      </select>
-    </div>
-    <canvas id="trendChart" height="80"></canvas>
-  </div>
-
 </div>
 
 <!-- Rewrite Advice Modal -->
 <div id="advice-modal" class="modal-overlay hidden">
-  <div class="modal-box" style="width:580px">
+  <div class="modal-box" style="width:600px; max-height:90vh; overflow-y:auto;">
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-bold text-gray-800">✍️ リライトアドバイス</h2>
-      <button onclick="closeAdviceModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      <div>
+        <h2 class="text-base font-bold text-slate-800">リライトアドバイス</h2>
+        <p class="text-xs text-slate-400 mt-0.5">GSC + GA4 データによる改善提案</p>
+      </div>
+      <button onclick="closeAdviceModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
     </div>
 
-    <!-- ローディング -->
-    <div id="advice-loading" class="py-10 text-center text-sm text-gray-400">
-      <span class="spinning inline-block mr-1">⏳</span> GSCからデータを取得中...
+    <div id="advice-loading" class="py-12 text-center text-sm text-slate-400">
+      <span class="spinning inline-block mr-2 text-lg">⟳</span> GSCからデータを取得中...
     </div>
 
-    <!-- コンテンツ（初期は非表示） -->
     <div id="advice-content" class="hidden space-y-5">
 
       <!-- タイトル改善案 -->
-      <div>
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">タイトル改善案</h3>
-        <div class="space-y-2">
-          <div class="flex items-start gap-2">
-            <span class="text-xs bg-red-50 text-red-500 px-2 py-0.5 rounded shrink-0 mt-0.5">現在</span>
-            <p id="adv-current-title" class="text-sm text-gray-600 leading-snug"></p>
+      <div class="bg-slate-50 rounded-xl p-4">
+        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">タイトル改善案</h3>
+        <div class="space-y-2.5">
+          <div class="flex items-start gap-2.5">
+            <span class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-md shrink-0 mt-0.5 font-medium">現在</span>
+            <p id="adv-current-title" class="text-sm text-slate-500 leading-snug"></p>
           </div>
-          <div class="flex items-start gap-2">
-            <span class="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded shrink-0 mt-0.5">改善案</span>
-            <p id="adv-suggested-title" class="text-sm font-medium text-gray-800 leading-snug"></p>
+          <div class="flex items-start gap-2.5">
+            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-md shrink-0 mt-0.5 font-medium">改善案</span>
+            <p id="adv-suggested-title" class="text-sm font-semibold text-slate-800 leading-snug"></p>
           </div>
         </div>
-        <!-- 不足キーワード -->
         <div id="adv-keywords-wrap" class="mt-3 hidden">
-          <p class="text-xs text-gray-400 mb-1.5">タイトルに追加を検討すべきキーワード</p>
+          <p class="text-xs text-slate-400 mb-2">追加検討キーワード</p>
           <div id="adv-keywords" class="flex flex-wrap gap-1.5"></div>
         </div>
       </div>
 
-      <hr class="border-gray-100">
-
       <!-- 改善ポイント -->
       <div>
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">コンテンツ改善チェックリスト</h3>
-        <ul id="adv-tips" class="space-y-2"></ul>
+        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">コンテンツ改善チェックリスト</h3>
+        <ul id="adv-tips" class="space-y-2.5"></ul>
       </div>
 
-      <hr class="border-gray-100">
+      <div class="border-t border-slate-100"></div>
 
       <!-- 上位クエリ -->
       <div>
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">上位流入クエリ（直近28日）</h3>
-        <div id="adv-queries-wrap">
-          <table class="w-full text-xs">
-            <thead>
-              <tr class="text-gray-400 border-b border-gray-100">
-                <th class="text-left pb-1.5 font-normal">クエリ</th>
-                <th class="text-right pb-1.5 font-normal w-16">表示回数</th>
-                <th class="text-right pb-1.5 font-normal w-12">順位</th>
-                <th class="text-right pb-1.5 font-normal w-12">CTR</th>
-              </tr>
-            </thead>
-            <tbody id="adv-queries" class="divide-y divide-gray-50"></tbody>
-          </table>
-          <p id="adv-queries-empty" class="text-xs text-gray-400 text-center py-3 hidden">クエリデータなし</p>
-        </div>
+        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">上位流入クエリ（直近28日）</h3>
+        <table class="w-full text-xs data-table">
+          <thead>
+            <tr>
+              <th class="text-left">クエリ</th>
+              <th class="text-right w-20">表示回数</th>
+              <th class="text-right w-14">順位</th>
+              <th class="text-right w-14">CTR</th>
+            </tr>
+          </thead>
+          <tbody id="adv-queries"></tbody>
+        </table>
+        <p id="adv-queries-empty" class="text-xs text-slate-400 text-center py-4 hidden">クエリデータなし</p>
       </div>
 
       <!-- GA4 指標 -->
       <div id="adv-ga4-wrap" class="hidden">
-        <hr class="border-gray-100 mb-5">
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">GA4 実績指標（直近スナップショット）</h3>
+        <div class="border-t border-slate-100 mb-5"></div>
+        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">GA4 実績指標</h3>
         <div class="grid grid-cols-3 gap-3" id="adv-ga4-metrics"></div>
-        <div id="adv-ga4-insight" class="mt-3 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 hidden"></div>
+        <div id="adv-ga4-insight" class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 hidden leading-relaxed"></div>
       </div>
 
       <!-- 記事リンク -->
-      <div class="pt-1">
+      <div class="flex items-center justify-between pt-1">
         <a id="adv-page-link" href="#" target="_blank"
-           class="text-xs text-green-600 hover:underline flex items-center gap-1">
-          🔗 記事を開く
+           class="text-xs text-green-600 hover:text-green-700 hover:underline flex items-center gap-1.5 font-medium">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+          記事を開く
         </a>
       </div>
     </div>
@@ -317,49 +415,51 @@
 <div id="site-modal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-bold text-gray-800">⚙️ サイト管理</h2>
-      <button onclick="closeSiteModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      <div>
+        <h2 class="text-base font-bold text-slate-800">サイト管理</h2>
+        <p class="text-xs text-slate-400 mt-0.5">監視対象サイトの追加・編集</p>
+      </div>
+      <button onclick="closeSiteModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
     </div>
 
-    <!-- Site List -->
     <div id="site-modal-list" class="mb-5 space-y-2"></div>
 
-    <!-- Divider -->
-    <div class="border-t border-gray-100 mb-4"></div>
+    <div class="border-t border-slate-100 mb-4"></div>
 
-    <!-- Add / Edit Form -->
     <div>
-      <h3 class="text-sm font-semibold text-gray-700 mb-3" id="site-form-title">＋ 新しいサイトを追加</h3>
+      <h3 class="text-sm font-semibold text-slate-700 mb-3" id="site-form-title">新しいサイトを追加</h3>
       <input type="hidden" id="edit-site-id" value="">
       <div class="space-y-3">
         <div>
-          <label class="text-xs text-gray-500 block mb-1">サイト名 <span class="text-red-400">*</span></label>
+          <label class="text-xs font-medium text-slate-500 block mb-1.5">サイト名 <span class="text-red-400">*</span></label>
           <input id="f-name" type="text" placeholder="例: GreenSnap STORE"
-            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-green-400">
+            class="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-colors placeholder:text-slate-300">
         </div>
         <div>
-          <label class="text-xs text-gray-500 block mb-1">GSC Site URL <span class="text-red-400">*</span></label>
+          <label class="text-xs font-medium text-slate-500 block mb-1.5">GSC Site URL <span class="text-red-400">*</span></label>
           <input id="f-gsc" type="text" placeholder="例: sc-domain:greensnap.co.jp"
-            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-green-400">
+            class="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-colors placeholder:text-slate-300">
         </div>
         <div>
-          <label class="text-xs text-gray-500 block mb-1">URL プレフィックス <span class="text-red-400">*</span></label>
+          <label class="text-xs font-medium text-slate-500 block mb-1.5">URL プレフィックス <span class="text-red-400">*</span></label>
           <input id="f-prefix" type="text" placeholder="例: https://greensnap.co.jp/columns/"
-            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-green-400">
+            class="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-colors placeholder:text-slate-300">
         </div>
         <div>
-          <label class="text-xs text-gray-500 block mb-1">GA4 プロパティ ID <span class="text-gray-300">(任意)</span></label>
+          <label class="text-xs font-medium text-slate-500 block mb-1.5">GA4 プロパティ ID <span class="text-slate-300 font-normal">(任意)</span></label>
           <input id="f-ga4" type="text" placeholder="例: 123456789"
-            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-green-400">
+            class="w-full text-sm border border-slate-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-colors placeholder:text-slate-300">
         </div>
       </div>
       <div class="flex gap-2 mt-4">
         <button onclick="saveSite()"
-          class="flex-1 text-sm py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 font-medium">
+          class="flex-1 text-sm py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 font-semibold transition-colors shadow-sm shadow-green-600/20">
           保存する
         </button>
         <button onclick="resetSiteForm()" id="cancel-edit-btn"
-          class="hidden text-sm px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+          class="hidden text-sm px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
           キャンセル
         </button>
       </div>
@@ -392,15 +492,15 @@ function onSiteChange() {
 // ── ユーティリティ ──────────────────────────────────────────────────────────
 
 function positionBadge(pos) {
-  if (pos <= 5)  return `<span class="text-xs badge-good px-2 py-0.5 rounded-full">${pos}位 ✓</span>`;
-  if (pos <= 10) return `<span class="text-xs badge-warning px-2 py-0.5 rounded-full">${pos}位 △</span>`;
-  return             `<span class="text-xs badge-critical px-2 py-0.5 rounded-full">${pos}位 !</span>`;
+  if (pos <= 5)  return `<span class="text-xs badge-good px-2 py-0.5 rounded-full font-medium">${pos}位</span>`;
+  if (pos <= 10) return `<span class="text-xs badge-warning px-2 py-0.5 rounded-full font-medium">${pos}位</span>`;
+  return             `<span class="text-xs badge-critical px-2 py-0.5 rounded-full font-medium">${pos}位</span>`;
 }
 
 function diffLabel(diff) {
-  if (diff > 0.5)  return `<span class="trend-down text-xs font-medium">↓${diff}位</span>`;
-  if (diff < -0.5) return `<span class="trend-up text-xs font-medium">↑${Math.abs(diff)}位</span>`;
-  return                  `<span class="trend-flat text-xs">→ 変化なし</span>`;
+  if (diff > 0.5)  return `<span class="trend-down text-xs font-semibold">↓${diff}</span>`;
+  if (diff < -0.5) return `<span class="trend-up text-xs font-semibold">↑${Math.abs(diff)}</span>`;
+  return                  `<span class="trend-flat text-xs">→</span>`;
 }
 
 function shortLabel(url) {
@@ -411,26 +511,26 @@ function shortLabel(url) {
 
 function renderAlertItem(a, type) {
   const colorMap = {
-    critical: { bg: 'bg-red-50 border-red-100', badge: 'badge-critical', label: '要対策', btnBorder: 'border-red-200 text-red-600 hover:bg-red-100' },
-    warning:  { bg: 'bg-yellow-50 border-yellow-100', badge: 'badge-warning', label: '要監視', btnBorder: 'border-yellow-200 text-yellow-700 hover:bg-yellow-100' },
-    watch:    { bg: 'bg-blue-50 border-blue-100', badge: 'badge-watch', label: '事前対策', btnBorder: 'border-blue-200 text-blue-600 hover:bg-blue-100' },
+    critical: { border: 'border-red-100 bg-red-50/50',   badge: 'badge-critical', label: '要対策' },
+    warning:  { border: 'border-amber-100 bg-amber-50/50', badge: 'badge-warning',  label: '要監視' },
+    watch:    { border: 'border-blue-100 bg-blue-50/50',  badge: 'badge-watch',    label: '事前対策' },
   };
   const c = colorMap[type];
   const impStr = a.impression_change_rate != null
-    ? `<span class="text-gray-500">表示回数 ${a.impression_change_rate > 0 ? '+' : ''}${a.impression_change_rate}%</span>` : '';
+    ? `<span class="text-slate-400">${a.impression_change_rate > 0 ? '+' : ''}${a.impression_change_rate}%</span>` : '';
   const pvStr = a.estimated_pv_loss > 0
-    ? `<span class="text-red-500">推定損失 約${a.estimated_pv_loss.toLocaleString()}PV/月</span>` : '';
+    ? `<span class="text-red-500 font-medium">損失 〜${a.estimated_pv_loss.toLocaleString()}PV/月</span>` : '';
   return `
-    <div class="flex items-start gap-3 p-3 rounded-lg border ${c.bg}">
+    <div class="flex items-start gap-3 p-3.5 rounded-xl border ${c.border}">
       <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 mb-1">
+        <div class="flex items-center gap-2 mb-1.5">
           <span class="text-xs font-medium ${c.badge} px-2 py-0.5 rounded-full">${c.label}</span>
+          ${diffLabel(a.position_diff)}
+          <span class="text-xs text-slate-400">${a.prev_position}位 → ${a.cur_position}位</span>
         </div>
         <a href="${a.page_url}" target="_blank"
-           class="text-sm font-medium text-gray-800 hover:underline truncate block">${shortLabel(a.page_url)}</a>
-        <div class="flex flex-wrap gap-3 mt-1.5 text-xs items-center">
-          ${diffLabel(a.position_diff)}
-          <span class="text-gray-400">${a.prev_position}位 → ${a.cur_position}位</span>
+           class="text-sm font-medium text-slate-800 hover:text-green-600 hover:underline truncate block leading-snug">${a.label || shortLabel(a.page_url)}</a>
+        <div class="flex flex-wrap gap-3 mt-1 text-xs items-center">
           ${impStr} ${pvStr}
         </div>
       </div>
@@ -438,7 +538,7 @@ function renderAlertItem(a, type) {
 }
 
 function switchTab(type, btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderAlerts(type);
 }
@@ -450,7 +550,7 @@ function renderAlerts(type = 'all') {
   if (type === 'all' || type === 'warning')  items.push(...allAlerts.warning.map(a => renderAlertItem(a, 'warning')));
   if (type === 'all' || type === 'watch')    items.push(...allAlerts.watch.map(a => renderAlertItem(a, 'watch')));
   if (items.length === 0) {
-    el.innerHTML = '<div class="text-sm text-gray-400 text-center py-8">✅ 対象記事はありません</div>';
+    el.innerHTML = '<div class="text-sm text-slate-400 text-center py-10 flex flex-col items-center gap-2"><svg class="w-10 h-10 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>対象記事はありません</div>';
   } else {
     el.innerHTML = items.join('');
   }
@@ -465,11 +565,11 @@ async function loadSummary() {
   const s = data.summary;
 
   document.getElementById('header-period').textContent = `${data.snapshot_date} 週 | 前年同週比`;
-  document.getElementById('last-updated').textContent   = `最終更新: ${data.snapshot_date}`;
-  document.getElementById('kpi-total').textContent      = `${s.total}件`;
-  document.getElementById('kpi-critical').textContent   = `${data.alerts.critical.length}件`;
-  document.getElementById('kpi-improved').textContent   = `${s.improved}件`;
-  document.getElementById('kpi-declined').textContent   = `${s.declined}件`;
+  document.getElementById('last-updated').textContent   = `更新: ${data.snapshot_date}`;
+  document.getElementById('kpi-total').textContent      = s.total.toLocaleString();
+  document.getElementById('kpi-critical').textContent   = data.alerts.critical.length;
+  document.getElementById('kpi-improved').textContent   = s.improved;
+  document.getElementById('kpi-declined').textContent   = s.declined;
 
   allAlerts = data.alerts;
   renderAlerts('all');
@@ -477,11 +577,11 @@ async function loadSummary() {
   // Top5
   const top5 = (s.top_articles || []).slice(0, 5);
   document.getElementById('top5-list').innerHTML = top5.map((a, i) => `
-    <div class="flex items-center gap-2 text-xs">
-      <span class="text-gray-400 w-4">${i + 1}</span>
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-bold text-slate-300 w-4 shrink-0">${i + 1}</span>
       <div class="flex-1 min-w-0">
-        <div class="text-gray-700 truncate">${shortLabel(a.page_url)}</div>
-        <div class="text-gray-400">${a.cur_impressions.toLocaleString()}回</div>
+        <div class="text-xs font-medium text-slate-700 truncate">${shortLabel(a.page_url)}</div>
+        <div class="text-xs text-slate-400">${a.cur_impressions.toLocaleString()} 回</div>
       </div>
       ${diffLabel(a.position_diff)}
     </div>`).join('');
@@ -494,10 +594,10 @@ async function loadSeason() {
   const data = await res.json();
   const articles = data.articles || [];
   document.getElementById('season-list').innerHTML = articles.length === 0
-    ? '<div class="text-xs text-gray-400">データなし</div>'
+    ? '<div class="text-xs text-slate-400">データなし</div>'
     : articles.slice(0, 6).map(a => `
-        <div class="flex items-center justify-between text-xs">
-          <span class="text-gray-700 truncate max-w-[160px]">${a.label || a.page_url}</span>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-slate-600 truncate">${a.label || a.page_url}</span>
           ${positionBadge(a.avg_position)}
         </div>`).join('');
 }
@@ -529,17 +629,13 @@ async function loadRecommendations() {
   if (!res.ok) return;
   recData = await res.json();
   const total = Object.values(recData).reduce((s, arr) => s + arr.length, 0);
-  document.getElementById('rec-count').textContent = `計 ${total}件`;
+  document.getElementById('rec-count').textContent = `計 ${total} 件`;
   renderRecTab(currentRecTab);
 }
 
 function switchRecTab(tab, btn) {
-  document.querySelectorAll('#rec-tab-bar .tab-btn').forEach(b => {
-    b.classList.remove('active');
-    b.classList.add('text-gray-500');
-  });
+  document.querySelectorAll('#rec-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  btn.classList.remove('text-gray-500');
   currentRecTab = tab;
   renderRecTab(tab);
 }
@@ -551,7 +647,7 @@ function renderRecTab(tab) {
 
   if (items.length === 0) {
     document.getElementById('rec-list').innerHTML =
-      `<div class="text-sm text-gray-400 text-center py-6">${meta.emptyMsg}</div>`;
+      `<div class="text-sm text-slate-400 text-center py-8">${meta.emptyMsg}</div>`;
     return;
   }
 
@@ -559,29 +655,29 @@ function renderRecTab(tab) {
     const posClass = r.avg_position <= 5 ? 'badge-good' : r.avg_position <= 10 ? 'badge-warning' : 'badge-critical';
     let extraBadge = '';
     if (tab === 'ctr_improve') {
-      extraBadge = `<span class="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">CTR ${r.ctr}%</span>`;
+      extraBadge = `<span class="text-xs bg-orange-50 text-orange-600 border border-orange-100 px-2 py-0.5 rounded-full font-medium">CTR ${r.ctr}%</span>`;
     } else if (tab === 'trending_up') {
-      extraBadge = `<span class="text-xs badge-good px-2 py-0.5 rounded-full">↑${r.position_change}位改善</span>`;
+      extraBadge = `<span class="text-xs badge-good px-2 py-0.5 rounded-full font-medium">↑${r.position_change}位改善</span>`;
     } else if (tab === 'pre_season') {
       const mNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
       const peaks = r.peak_months.map(m => mNames[m-1]).join('・');
-      extraBadge = `<span class="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">ピーク: ${peaks}</span>`;
+      extraBadge = `<span class="text-xs bg-purple-50 text-purple-600 border border-purple-100 px-2 py-0.5 rounded-full font-medium">ピーク: ${peaks}</span>`;
     }
     const pageUrlEsc = r.page_url.replace(/'/g, "\\'");
     return `
-      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 hover:border-green-200 hover:bg-green-50 transition-all">
+      <div class="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 hover:border-green-200 hover:bg-green-50/50 transition-all card-hover">
         <div class="flex-1 min-w-0">
           <a href="${r.page_url}" target="_blank"
-             class="text-sm text-gray-800 hover:underline truncate block font-medium">${r.label}</a>
-          <div class="flex flex-wrap items-center gap-2 mt-1">
+             class="text-sm text-slate-800 hover:text-green-700 hover:underline truncate block font-medium leading-snug">${r.label}</a>
+          <div class="flex flex-wrap items-center gap-2 mt-1.5">
             ${extraBadge}
-            <span class="text-xs text-gray-400">表示 ${r.impressions.toLocaleString()}回/週</span>
+            <span class="text-xs text-slate-400">${r.impressions.toLocaleString()} 回/週</span>
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-          <span class="text-xs ${posClass} px-2 py-0.5 rounded-full whitespace-nowrap">${r.avg_position}位</span>
+          <span class="text-xs ${posClass} px-2.5 py-0.5 rounded-full font-medium">${r.avg_position}位</span>
           <button onclick="openAdviceModal('${pageUrlEsc}','${tab}')"
-            class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-white hover:border-green-300 hover:text-green-600 whitespace-nowrap">
+            class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:border-green-300 hover:text-green-600 transition-all font-medium whitespace-nowrap">
             詳細
           </button>
         </div>
@@ -618,59 +714,54 @@ async function loadTraffic() {
   noData.classList.add('hidden');
   wrap.classList.remove('hidden');
 
-  const prevLabel = data.prev_date ? `前週比（${data.prev_date}週→${data.snapshot_date}週）` : `${data.snapshot_date}週`;
+  const prevLabel = data.prev_date ? `${data.prev_date} → ${data.snapshot_date}` : data.snapshot_date;
   periodEl.textContent = prevLabel;
 
   tbody.innerHTML = data.articles.map((a, i) => {
-    // 前週比バッジ
-    let changeBadge = '<span class="text-gray-300">—</span>';
+    let changeBadge = '<span class="text-slate-300">—</span>';
     if (a.session_change_rate !== null) {
       const r = a.session_change_rate;
       if (r >= 5) {
-        changeBadge = `<span class="text-green-600 font-medium">+${r}%</span>`;
+        changeBadge = `<span class="text-emerald-600 font-semibold">+${r}%</span>`;
       } else if (r <= -5) {
-        changeBadge = `<span class="text-red-500 font-medium">${r}%</span>`;
+        changeBadge = `<span class="text-red-500 font-semibold">${r}%</span>`;
       } else {
-        changeBadge = `<span class="text-gray-400">${r > 0 ? '+' : ''}${r}%</span>`;
+        changeBadge = `<span class="text-slate-400">${r > 0 ? '+' : ''}${r}%</span>`;
       }
     }
 
-    // エンゲージメント色
     const eng = a.engagement_rate;
-    const engColor = eng >= 60 ? 'text-green-600' : eng >= 40 ? 'text-yellow-600' : 'text-red-500';
+    const engColor = eng >= 60 ? 'text-emerald-600' : eng >= 40 ? 'text-amber-600' : 'text-red-500';
 
-    // 読了時間
     const sec = a.avg_engagement_time_sec;
     const timeStr = sec >= 60
       ? `${Math.floor(sec / 60)}分${Math.round(sec % 60)}秒`
       : `${Math.round(sec)}秒`;
-    const timeColor = sec >= 60 ? 'text-green-600' : sec >= 30 ? 'text-yellow-600' : 'text-red-400';
+    const timeColor = sec >= 60 ? 'text-emerald-600' : sec >= 30 ? 'text-amber-600' : 'text-red-400';
 
-    // GSC順位
     const posStr = a.cur_position !== null
-      ? `<span class="${a.cur_position <= 5 ? 'text-green-600' : a.cur_position <= 10 ? 'text-yellow-600' : 'text-gray-500'}">${a.cur_position}位</span>`
-      : '<span class="text-gray-300">—</span>';
+      ? `<span class="${a.cur_position <= 5 ? 'text-emerald-600 font-semibold' : a.cur_position <= 10 ? 'text-amber-600' : 'text-slate-400'}">${a.cur_position}位</span>`
+      : '<span class="text-slate-300">—</span>';
 
-    // 行の背景（増減で薄く色付け）
     let rowBg = '';
     if (a.session_change_rate !== null) {
-      if (a.session_change_rate >= 10) rowBg = 'bg-green-50';
-      else if (a.session_change_rate <= -10) rowBg = 'bg-red-50';
+      if (a.session_change_rate >= 10) rowBg = 'bg-emerald-50/50';
+      else if (a.session_change_rate <= -10) rowBg = 'bg-red-50/50';
     }
 
     return `
-      <tr class="${rowBg} hover:bg-gray-50 transition-colors">
-        <td class="py-2 pr-2 text-gray-300 text-xs">${i + 1}</td>
-        <td class="py-2 pr-3 max-w-0" style="width:42%">
+      <tr class="${rowBg}">
+        <td class="py-2.5 pr-2 text-slate-300 text-xs font-medium">${i + 1}</td>
+        <td class="py-2.5 pr-3" style="max-width:0; width:44%">
           <a href="${a.page_url}" target="_blank"
-             class="text-gray-800 hover:underline hover:text-green-600 truncate block text-xs font-medium"
+             class="text-slate-700 hover:text-green-600 hover:underline truncate block text-sm font-medium"
              title="${a.label}">${a.label}</a>
         </td>
-        <td class="py-2 text-right text-gray-700 font-medium tabular-nums">${a.cur_sessions.toLocaleString()}</td>
-        <td class="py-2 text-right tabular-nums">${changeBadge}</td>
-        <td class="py-2 text-right ${engColor} tabular-nums">${eng}%</td>
-        <td class="py-2 text-right ${timeColor} tabular-nums text-xs">${timeStr}</td>
-        <td class="py-2 text-right">${posStr}</td>
+        <td class="py-2.5 text-right text-slate-700 font-semibold tabular-nums text-sm">${a.cur_sessions.toLocaleString()}</td>
+        <td class="py-2.5 text-right tabular-nums text-sm">${changeBadge}</td>
+        <td class="py-2.5 text-right ${engColor} tabular-nums text-sm">${eng}%</td>
+        <td class="py-2.5 text-right ${timeColor} tabular-nums text-xs">${timeStr}</td>
+        <td class="py-2.5 text-right text-sm">${posStr}</td>
       </tr>`;
   }).join('');
 }
@@ -680,12 +771,12 @@ async function loadTrend() {
   const res = await fetch(`/api/trend?site_id=${currentSiteId}&weeks=${weeks}`);
   if (!res.ok) return;
   const data = await res.json();
-  const colors = ['#6366f1','#16a34a','#dc2626','#f59e0b','#06b6d4'];
+  const colors = ['#6366f1','#16a34a','#f59e0b','#06b6d4','#ec4899'];
   const datasets = data.datasets.map((d, i) => ({
     ...d,
     borderColor: colors[i % colors.length],
-    backgroundColor: colors[i % colors.length] + '10',
-    tension: 0.4, fill: true, pointRadius: 2,
+    backgroundColor: colors[i % colors.length] + '12',
+    tension: 0.4, fill: true, pointRadius: 2, borderWidth: 2,
   }));
   if (trendChart) trendChart.destroy();
   const ctx = document.getElementById('trendChart').getContext('2d');
@@ -694,10 +785,12 @@ async function loadTrend() {
     data: { labels: data.labels, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11, family: 'Inter' }, padding: 16 } }
+      },
       scales: {
-        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
-        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 12 } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11, family: 'Inter' } }, border: { display: false } },
+        x: { grid: { display: false }, ticks: { font: { size: 11, family: 'Inter' }, maxTicksLimit: 12 }, border: { display: false } },
       }
     }
   });
@@ -708,18 +801,17 @@ async function loadTrend() {
 async function runBatch() {
   const btn = document.getElementById('run-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinning">🔄</span> 実行中...';
+  btn.innerHTML = '<span class="spinning inline-block">↻</span> 実行中...';
   try {
-    const res = await fetch('/api/run', { method: 'POST' });
-    const data = await res.json();
-    btn.innerHTML = '✅ 開始しました';
+    await fetch('/api/run', { method: 'POST' });
+    btn.innerHTML = '✓ 開始しました';
     setTimeout(() => {
-      btn.innerHTML = '🔄 今すぐ実行';
+      btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> 今すぐ実行';
       btn.disabled = false;
       loadAll();
     }, 8000);
   } catch(e) {
-    btn.innerHTML = '❌ エラー';
+    btn.innerHTML = 'エラー';
     btn.disabled = false;
   }
 }
@@ -753,17 +845,15 @@ document.getElementById('advice-modal').addEventListener('click', function(e) {
 });
 
 function renderAdvice(d, pageUrl) {
-  // タイトル
   document.getElementById('adv-current-title').textContent   = d.current_title  || '（タイトル未取得）';
   document.getElementById('adv-suggested-title').textContent = d.suggested_title || d.current_title || '—';
 
-  // 不足キーワード
   const kwWrap = document.getElementById('adv-keywords-wrap');
   const kwEl   = document.getElementById('adv-keywords');
   if (d.missing_keywords && d.missing_keywords.length > 0) {
     kwEl.innerHTML = d.missing_keywords.map(k =>
-      `<span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
-         +${k.keyword} <span class="text-amber-400">${k.impressions.toLocaleString()}回</span>
+      `<span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full">
+         ${k.keyword} <span class="text-amber-400 ml-1">${k.impressions.toLocaleString()}</span>
        </span>`
     ).join('');
     kwWrap.classList.remove('hidden');
@@ -771,25 +861,23 @@ function renderAdvice(d, pageUrl) {
     kwWrap.classList.add('hidden');
   }
 
-  // 改善ポイント
   document.getElementById('adv-tips').innerHTML = (d.content_tips || []).map(t =>
-    `<li class="flex items-start gap-2 text-sm text-gray-700">
-       <span class="shrink-0">${t.icon}</span>
-       <span>${t.point}</span>
+    `<li class="flex items-start gap-2.5 text-sm text-slate-700">
+       <span class="shrink-0 mt-0.5">${t.icon}</span>
+       <span class="leading-relaxed">${t.point}</span>
      </li>`
   ).join('');
 
-  // 上位クエリ
   const tbody = document.getElementById('adv-queries');
   const emptyEl = document.getElementById('adv-queries-empty');
   if (d.top_queries && d.top_queries.length > 0) {
     tbody.innerHTML = d.top_queries.map(q => {
-      const posClass = q.position <= 5 ? 'text-green-600' : q.position <= 10 ? 'text-yellow-600' : 'text-gray-500';
+      const posClass = q.position <= 5 ? 'text-emerald-600 font-semibold' : q.position <= 10 ? 'text-amber-600' : 'text-slate-400';
       return `<tr>
-        <td class="py-1.5 pr-2 text-gray-700 max-w-[280px] truncate">${q.query}</td>
-        <td class="py-1.5 text-right text-gray-500">${q.impressions.toLocaleString()}</td>
-        <td class="py-1.5 text-right ${posClass} font-medium">${q.position}</td>
-        <td class="py-1.5 text-right text-gray-500">${q.ctr}%</td>
+        <td class="py-2 pr-2 text-slate-700 max-w-[280px] truncate">${q.query}</td>
+        <td class="py-2 text-right text-slate-500">${q.impressions.toLocaleString()}</td>
+        <td class="py-2 text-right ${posClass}">${q.position}</td>
+        <td class="py-2 text-right text-slate-400">${q.ctr}%</td>
       </tr>`;
     }).join('');
     emptyEl.classList.add('hidden');
@@ -798,7 +886,6 @@ function renderAdvice(d, pageUrl) {
     emptyEl.classList.remove('hidden');
   }
 
-  // GA4 指標
   const ga4Wrap = document.getElementById('adv-ga4-wrap');
   const ga4 = d.ga4;
   if (ga4) {
@@ -808,28 +895,27 @@ function renderAdvice(d, pageUrl) {
     const secs     = Math.round(engTime % 60);
     const timeStr  = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
 
-    const engColor  = engPct >= 60 ? 'text-green-600' : engPct >= 40 ? 'text-yellow-600' : 'text-red-500';
-    const timeColor = engTime >= 60 ? 'text-green-600' : engTime >= 30 ? 'text-yellow-600' : 'text-red-500';
+    const engColor  = engPct >= 60 ? 'text-emerald-600' : engPct >= 40 ? 'text-amber-600' : 'text-red-500';
+    const timeColor = engTime >= 60 ? 'text-emerald-600' : engTime >= 30 ? 'text-amber-600' : 'text-red-500';
 
     document.getElementById('adv-ga4-metrics').innerHTML = `
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-xs text-gray-400 mb-1">週間セッション</div>
-        <div class="text-lg font-bold text-gray-700">${ga4.sessions.toLocaleString()}</div>
+      <div class="bg-slate-50 rounded-xl p-4 text-center border border-slate-100">
+        <div class="text-xs text-slate-400 mb-1.5">週間セッション</div>
+        <div class="text-xl font-bold text-slate-700">${ga4.sessions.toLocaleString()}</div>
       </div>
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-xs text-gray-400 mb-1">エンゲージメント率</div>
-        <div class="text-lg font-bold ${engColor}">${engPct}%</div>
+      <div class="bg-slate-50 rounded-xl p-4 text-center border border-slate-100">
+        <div class="text-xs text-slate-400 mb-1.5">エンゲージメント率</div>
+        <div class="text-xl font-bold ${engColor}">${engPct}%</div>
       </div>
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-xs text-gray-400 mb-1">平均読了時間</div>
-        <div class="text-lg font-bold ${timeColor}">${timeStr}</div>
+      <div class="bg-slate-50 rounded-xl p-4 text-center border border-slate-100">
+        <div class="text-xs text-slate-400 mb-1.5">平均読了時間</div>
+        <div class="text-xl font-bold ${timeColor}">${timeStr}</div>
       </div>`;
 
-    // インサイトメッセージ
     const insightEl = document.getElementById('adv-ga4-insight');
     const insights = [];
     if (engPct < 40)     insights.push('⚠️ エンゲージメント率が低め（40%未満）— タイトルと記事内容がずれている可能性があります');
-    if (engTime < 30)    insights.push('⚠️ 平均読了時間が30秒未満 — 冒頭30%で離脱されている可能性があります。結論を前半に移動してください');
+    if (engTime < 30)    insights.push('⚠️ 平均読了時間が30秒未満 — 冒頭で離脱されている可能性があります。結論を前半に移動してください');
     if (engPct >= 70 && engTime >= 90) insights.push('✅ 読了品質は良好です。タイトル・見出しの最適化で順位向上が見込めます');
     if (insights.length > 0) {
       insightEl.innerHTML = insights.join('<br>');
@@ -837,17 +923,13 @@ function renderAdvice(d, pageUrl) {
     } else {
       insightEl.classList.add('hidden');
     }
-
     ga4Wrap.classList.remove('hidden');
   } else {
     ga4Wrap.classList.add('hidden');
   }
 
-  // 記事リンク
   document.getElementById('adv-page-link').href = pageUrl;
-  document.getElementById('adv-page-link').textContent = `🔗 ${pageUrl}`;
 
-  // ローディング → コンテンツ切替
   document.getElementById('advice-loading').classList.add('hidden');
   document.getElementById('advice-content').classList.remove('hidden');
 }
@@ -864,7 +946,6 @@ function closeSiteModal() {
   document.getElementById('site-modal').classList.add('hidden');
 }
 
-// モーダル外クリックで閉じる
 document.getElementById('site-modal').addEventListener('click', function(e) {
   if (e.target === this) closeSiteModal();
 });
@@ -875,20 +956,20 @@ async function refreshSiteModalList() {
   const sites = await res.json();
   const el = document.getElementById('site-modal-list');
   if (sites.length === 0) {
-    el.innerHTML = '<p class="text-xs text-gray-400">サイトがまだ登録されていません</p>';
+    el.innerHTML = '<p class="text-xs text-slate-400">サイトがまだ登録されていません</p>';
     return;
   }
   el.innerHTML = sites.map(s => `
-    <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 bg-gray-50">
+    <div class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-slate-100 bg-slate-50/80">
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-medium text-gray-700 truncate">${s.name}</div>
-        <div class="text-xs text-gray-400 truncate">${s.url_prefix}</div>
+        <div class="text-sm font-medium text-slate-700 truncate">${s.name}</div>
+        <div class="text-xs text-slate-400 truncate mt-0.5">${s.url_prefix}</div>
       </div>
-      <div class="flex gap-1 shrink-0">
+      <div class="flex gap-1.5 shrink-0">
         <button onclick="startEditSite(${s.id},'${esc(s.name)}','${esc(s.gsc_site_url)}','${esc(s.url_prefix)}','${esc(s.ga4_property_id||'')}')"
-          class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-white">編集</button>
+          class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:border-slate-300 transition-all">編集</button>
         <button onclick="deleteSite(${s.id})"
-          class="text-xs px-2 py-1 rounded border border-red-100 text-red-400 hover:bg-red-50">削除</button>
+          class="text-xs px-2.5 py-1.5 rounded-lg border border-red-100 text-red-400 hover:bg-red-50 transition-all">削除</button>
       </div>
     </div>`).join('');
 }
@@ -901,7 +982,7 @@ function startEditSite(id, name, gsc, prefix, ga4) {
   document.getElementById('f-gsc').value    = gsc;
   document.getElementById('f-prefix').value = prefix;
   document.getElementById('f-ga4').value    = ga4;
-  document.getElementById('site-form-title').textContent = '✏️ サイトを編集';
+  document.getElementById('site-form-title').textContent = 'サイトを編集';
   document.getElementById('cancel-edit-btn').classList.remove('hidden');
 }
 
@@ -911,7 +992,7 @@ function resetSiteForm() {
   document.getElementById('f-gsc').value    = '';
   document.getElementById('f-prefix').value = '';
   document.getElementById('f-ga4').value    = '';
-  document.getElementById('site-form-title').textContent = '＋ 新しいサイトを追加';
+  document.getElementById('site-form-title').textContent = '新しいサイトを追加';
   document.getElementById('cancel-edit-btn').classList.add('hidden');
   document.getElementById('site-form-error').classList.add('hidden');
 }
@@ -955,8 +1036,6 @@ async function saveSite() {
 
   resetSiteForm();
   await refreshSiteModalList();
-
-  // サイトセレクターを更新
   await loadSites();
   loadAll();
 }
@@ -979,7 +1058,6 @@ function loadAll() {
   loadTrend();
 }
 
-// サイト一覧を先に読んでからデータ読み込み
 loadSites().then(() => loadAll());
 </script>
 </body>
