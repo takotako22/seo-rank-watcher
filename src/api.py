@@ -80,11 +80,14 @@ def _top_articles_trend(site_id: int, url_prefix: str, top_n: int = 5, weeks: in
                 ORDER BY snapshot_date
             """, (site_id, top_urls, weeks))
             rows = cur.fetchall()
+    from .title_fetcher import get_titles
+    titles = get_titles(top_urls, site_id)
     dates = sorted(set(str(r[1]) for r in rows))
-    colors = ["#6366f1","#16a34a","#dc2626","#f59e0b","#06b6d4"]
+    colors = ["#6366f1","#16a34a","#dc2626","#f59e0b","#06b6d4","#f97316","#8b5cf6","#10b981","#ef4444","#3b82f6"]
     datasets = []
     for i, url in enumerate(top_urls):
-        label = url.replace(url_prefix, "").strip("/")[:25]
+        default = url.replace(url_prefix, "").strip("/")[:10]
+        label = titles.get(url, default)[:10]
         data_map = {str(r[1]): r[2] for r in rows if r[0] == url}
         datasets.append({"label": label, "data": [data_map.get(d, 0) for d in dates], "borderColor": colors[i % len(colors)]})
     return {"labels": dates, "datasets": datasets}
