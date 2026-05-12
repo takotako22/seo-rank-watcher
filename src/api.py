@@ -650,6 +650,215 @@ def api_run_debug():
         return JSONResponse({"status": "error", "error": str(e), "traceback": traceback.format_exc(), "log": log_buffer.getvalue()}, status_code=500)
 
 
+# ── SEO監査 ──────────────────────────────────────────────────────────────────
+
+def _run_seo_audit(url_prefix: str) -> list[dict]:
+    """
+    実サイトを取得してSEO問題をチェックし、結果を返す。
+    対象: url_prefix から代表記事を1本サンプリングして診断。
+    """
+    import re, json
+    import requests as req
+
+    HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; seo-rank-watcher/1.0)"}
+    findings = []
+
+    def add(tab, priority, category, title, detail, fix, passed=False):
+        findings.append({
+            "tab": tab, "priority": priority, "category": category,
+            "title": title, "detail": detail, "fix": fix, "passed": passed,
+        })
+
+    # ── トップページ取得 ─────────────────────────────────────────────────────
+    try:
+        top_resp = req.get(url_prefix, headers=HEADERS, timeout=10)
+        top_html = top_resp.text
+    except Exception as e:
+        return [{"tab": "tech", "priority": "high", "category": "取得エラー",
+                 "title": f"ページ取得に失敗しました: {e}", "detail": "", "fix": "", "passed": False}]
+
+    # ── 代表記事URLを抽出 ────────────────────────────────────────────────────
+    from urllib.parse import urlparse
+    parsed = urlparse(url_prefix)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    path_prefix = parsed.path.rstrip("/")
+    # href="/columns/xxx" or href="https://domain/columns/xxx" を抽出
+    article_hrefs = re.findall(
+        rf'href=["\']({re.escape(url_prefix)}[^"\'?#]+)["\']', top_html
+    )
+    if not article_hrefs:
+        article_hrefs = re.findall(
+            rf'href=["\']({re.escape(path_prefix)}/[^"\'?#]+)["\']', top_html
+        )
+    sample_url = article_hrefs[0] if article_hrefs else url_prefix
+    if sample_url.startswith("/"):
+        sample_url = base + sample_url
+
+    # ── 記事ページ取得 ───────────────────────────────────────────────────────
+    try:
+        art_resp = req.get(sample_url, headers=HEADERS, timeout=10)
+        art_html = art_resp.text
+    except Exception:
+        art_html = top_html
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Core Web Vitals チェック
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # CLS: img に width/height がない
+    imgs = re.findall(r'<img[^>]+>', art_html, re.IGNORECASE)
+    imgs_no_dim = [i for i in imgs if not (re.search(r'\bwidth\s*=', i) and re.search(r'\bheight\s*=', i))]
+    if imgs_no_dim:
+        add("cwv", "high", "CLS",
+            f"画像にwidth/height属性が未設定（{len(imgs_no_dim)}/{len(imgs)}件）",
+            f"記事内の {len(imgs_no_dim)} 枚の画像にwidth・height属性がなく、読み込み時にレイアウトシフト（CLS）が発生します。",
+            "全imgタグに width・height 属性を追加、またはCSSで aspect-ratio を指定する")
+    else:
+        add("cwv", "low", "CLS", "画像のwidth/height属性は設定済み", "", "", passed=True)
+
+    # LCP: preload がない
+    has_preload = bool(re.search(r'rel=["\']preload["\']', art_html, re.IGNORECASE))
+    if not has_preload:
+        add("cwv", "high", "LCP",
+            "ファーストビュー画像にpreloadが未設定",
+            "アイキャッチ画像に <link rel=\"preload\" as=\"image\"> がなく、LCP（最大コンテンツ描画）が遅延しています。",
+            '<link rel="preload" as="image" href="..."> をhead内に追加してアイキャッチ画像を優先読み込みする')
+    else:
+        add("cwv", "low", "LCP", "preloadは設定済み", "", "", passed=True)
+
+    # Resource: srcset がない
+    imgs_no_srcset = [i for i in imgs if not re.search(r'\bsrcset\s*=', i)]
+    if len(imgs_no_srcset) > len(imgs) * 0.7:
+        add("cwv", "medium", "Resource",
+            f"srcsetによるレスポンシブ画像が未対応（{len(imgs_no_srcset)}/{len(imgs)}件）",
+            "画像がsrcsetなしの固定URLで配信されており、モバイルでも大きいサイズの画像が読み込まれています。",
+            "CDNの画像変換機能を使いsrcset + sizesを設定。WebP形式への変換も合わせて実施する")
+    else:
+        add("cwv", "low", "Resource", "srcsetは概ね設定済み", "", "", passed=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 技術的SEO チェック
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # JSON-LD を全て抽出
+    jsonld_blocks = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', art_html, re.DOTALL | re.IGNORECASE)
+    schema_types = []
+    for block in jsonld_blocks:
+        try:
+            data = json.loads(block.strip())
+            t = data.get("@type", "")
+            if isinstance(t, list):
+                schema_types.extend(t)
+            else:
+                schema_types.append(t)
+            # @graph 対応
+            for g in data.get("@graph", []):
+                gt = g.get("@type", "")
+                schema_types.extend(gt if isinstance(gt, list) else [gt])
+        except Exception:
+            pass
+
+    # FAQPage スキーマ
+    has_faq_html = bool(re.search(r'よくある質問|FAQ|faq', art_html, re.IGNORECASE))
+    has_faq_schema = "FAQPage" in schema_types
+    if has_faq_html and not has_faq_schema:
+        add("tech", "high", "構造化データ",
+            "FAQPageスキーマが未実装（FAQコンテンツは存在）",
+            "記事にFAQセクションがあるにもかかわらずFAQPage JSON-LDがありません。リッチリザルトの機会を失っています。",
+            "FAQセクションに FAQPage JSON-LD を追加。Googleリッチリザルト掲載でCTR改善が期待できる")
+    elif has_faq_schema:
+        add("tech", "low", "構造化データ", "FAQPageスキーマは実装済み", "", "", passed=True)
+
+    # BreadcrumbList スキーマ
+    has_bc_html = bool(re.search(r'breadcrumb|パンくず|BreadcrumbList', art_html, re.IGNORECASE))
+    has_bc_schema = "BreadcrumbList" in schema_types
+    if has_bc_html and not has_bc_schema:
+        add("tech", "high", "構造化データ",
+            "BreadcrumbListスキーマが未実装（パンくずは存在）",
+            "パンくずナビゲーションはHTMLで実装済みですが、BreadcrumbList JSON-LDがありません。",
+            "パンくずに対応する BreadcrumbList JSON-LD をページに追加する")
+    elif has_bc_schema:
+        add("tech", "low", "構造化データ", "BreadcrumbListスキーマは実装済み", "", "", passed=True)
+
+    # Article / BlogPosting スキーマ
+    has_article_schema = any(t in schema_types for t in ["Article", "BlogPosting", "NewsArticle"])
+    if not has_article_schema:
+        add("tech", "high", "構造化データ",
+            "Article/BlogPostingスキーマが未実装",
+            "記事ページにArticle JSON-LDがなく、Googleニュース・AIOへの引用可能性を損失しています。",
+            "Article JSON-LDに headline, author, datePublished, dateModified, image を含めて実装する")
+    else:
+        add("tech", "low", "構造化データ", "Articleスキーマは実装済み", "", "", passed=True)
+
+    # canonical タグ
+    has_canonical = bool(re.search(r'rel=["\']canonical["\']', art_html, re.IGNORECASE))
+    if not has_canonical:
+        add("tech", "medium", "canonicalタグ",
+            "canonicalタグが未設定",
+            "記事ページにcanonicalタグがなく、URLの重複インデックスが発生するリスクがあります。",
+            '<link rel="canonical" href="https://example.com/columns/xxx"> を各記事のheadに追加する')
+    else:
+        add("tech", "low", "canonicalタグ", "canonicalタグは設定済み", "", "", passed=True)
+
+    # alt属性の品質
+    generic_alts = re.findall(r'alt=["\'](?:サムネイル画像|image|img|写真|thumbnail)["\']', art_html, re.IGNORECASE)
+    if generic_alts:
+        add("tech", "medium", "alt属性",
+            f"汎用的なalt属性が {len(generic_alts)} 件",
+            f'"{generic_alts[0]}" のような非記述的なalt属性が使われており、画像検索への流入と音声読み上げ対応が不十分です。',
+            "各画像の内容を説明する具体的なalt属性に変更する（例: 「さつまいも苗の植え付け方法」）")
+    else:
+        add("tech", "low", "alt属性", "alt属性は適切に設定されています", "", "", passed=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # E-E-A-T チェック
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 著者情報
+    has_author_html = bool(re.search(r'著者|監修|執筆|ライター|author|writer', art_html, re.IGNORECASE))
+    has_author_schema = any(
+        '"author"' in b or "'author'" in b for b in jsonld_blocks
+    )
+    if not has_author_html and not has_author_schema:
+        add("eeat", "high", "Experience/Expertise",
+            "著者・監修者情報が記事に未掲載",
+            "植物・園芸の専門記事に著者名・プロフィール・監修者情報が一切ありません。専門性の明示がランキングに影響します。",
+            "著者プロフィールページを作成し、各記事に著者名・監修者をリンク付きで明示する")
+    else:
+        add("eeat", "low", "Experience/Expertise", "著者情報は掲載済み", "", "", passed=True)
+
+    # dateModified
+    has_date_modified = bool(re.search(r'"dateModified"', art_html))
+    if not has_date_modified:
+        add("eeat", "medium", "Trustworthiness",
+            "dateModifiedが構造化データに未設定",
+            "Article JSON-LDのdateModifiedがないためGoogleが記事の鮮度を正しく評価できません。",
+            "Article JSON-LDに dateModified を追加し、コンテンツ更新時に必ず更新する")
+    else:
+        add("eeat", "low", "Trustworthiness", "dateModifiedは設定済み", "", "", passed=True)
+
+    return findings
+
+
+@app.get("/api/seo/audit")
+def api_seo_audit(site_id: int = 1):
+    """実サイトをスクレイプしてSEO問題をチェックする。"""
+    site = _get_site_or_404(site_id)
+    try:
+        findings = _run_seo_audit(site["url_prefix"])
+        issues   = [f for f in findings if not f.get("passed")]
+        passed   = [f for f in findings if f.get("passed")]
+        return {
+            "site":    site["name"],
+            "checked": site["url_prefix"],
+            "issues":  issues,
+            "passed":  passed,
+            "total_issues": len(issues),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── キーワード分析 ────────────────────────────────────────────────────────────
 
 # 植物・園芸系キーワードのフィルタワード
