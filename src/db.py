@@ -174,39 +174,44 @@ def get_ga4_stats(
 ) -> dict[str, dict]:
     """
     指定日に最も近いGA4スナップショットをURLリストで取得する。
+    テーブル未存在・データなしの場合は {} を返す。
     Returns: {page_url: {sessions, pageviews, engagement_rate, avg_engagement_time_sec}}
     """
     if not page_urls:
         return {}
-    with get_conn() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # 指定日以前の最新スナップショット日を取得
-            cur.execute(
-                """
-                SELECT MAX(snapshot_date) FROM ga4_snapshots
-                WHERE site_id = %s AND snapshot_date <= %s
-                """,
-                (site_id, snapshot_date),
-            )
-            row = cur.fetchone()
-            nearest_date = row["max"] if row else None
-            if not nearest_date:
-                return {}
+    try:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # 指定日以前の最新スナップショット日を取得
+                cur.execute(
+                    """
+                    SELECT MAX(snapshot_date) FROM ga4_snapshots
+                    WHERE site_id = %s AND snapshot_date <= %s
+                    """,
+                    (site_id, snapshot_date),
+                )
+                row = cur.fetchone()
+                nearest_date = row["max"] if row else None
+                if not nearest_date:
+                    return {}
 
-            cur.execute(
-                """
-                SELECT page_url, sessions, pageviews, engagement_rate, avg_engagement_time_sec
-                FROM ga4_snapshots
-                WHERE site_id = %s AND snapshot_date = %s AND page_url = ANY(%s)
-                """,
-                (site_id, nearest_date, page_urls),
-            )
-            return {
-                r["page_url"]: {
-                    "sessions":               int(r["sessions"] or 0),
-                    "pageviews":              int(r["pageviews"] or 0),
-                    "engagement_rate":        float(r["engagement_rate"] or 0),
-                    "avg_engagement_time_sec": float(r["avg_engagement_time_sec"] or 0),
+                cur.execute(
+                    """
+                    SELECT page_url, sessions, pageviews, engagement_rate, avg_engagement_time_sec
+                    FROM ga4_snapshots
+                    WHERE site_id = %s AND snapshot_date = %s AND page_url = ANY(%s)
+                    """,
+                    (site_id, nearest_date, page_urls),
+                )
+                return {
+                    r["page_url"]: {
+                        "sessions":                int(r["sessions"] or 0),
+                        "pageviews":               int(r["pageviews"] or 0),
+                        "engagement_rate":         float(r["engagement_rate"] or 0),
+                        "avg_engagement_time_sec": float(r["avg_engagement_time_sec"] or 0),
+                    }
+                    for r in cur.fetchall()
                 }
-                for r in cur.fetchall()
-            }
+    except Exception as e:
+        print(f"[get_ga4_stats] エラー（テーブル未存在の可能性）: {e}")
+        return {}

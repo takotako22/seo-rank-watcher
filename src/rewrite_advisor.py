@@ -146,7 +146,6 @@ def _fetch_page_top_queries(
             }]
         }],
         "rowLimit": 20,
-        "orderBy": [{"fieldName": "impressions", "sortOrder": "DESCENDING"}],
     }
     resp = service.searchanalytics().query(siteUrl=site_url, body=body).execute()
     return [
@@ -189,7 +188,8 @@ def get_rewrite_advice(
     start_date = end_date - timedelta(days=27)
     try:
         top_queries = _fetch_page_top_queries(site_url, page_url, start_date, end_date)
-    except Exception:
+    except Exception as e:
+        print(f"[rewrite_advisor] GSCクエリ取得エラー: {e}")
         top_queries = []
 
     # キーワードギャップ分析

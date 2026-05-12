@@ -211,10 +211,14 @@ def api_rec_detail(site_id: int = 1, page_url: str = "", pattern: str = "ctr_imp
     from .rewrite_advisor import get_rewrite_advice
     advice = get_rewrite_advice(site["gsc_site_url"], page_url, pattern, site_id)
 
-    # GA4データを付加（取得できなければ空）
-    latest = _latest_snapshot_date(site_id)
-    ga4 = get_ga4_stats([page_url], latest or date.today(), site_id) if latest else {}
-    advice["ga4"] = ga4.get(page_url)
+    # GA4データを付加（テーブル未存在・データなしの場合は None）
+    try:
+        latest = _latest_snapshot_date(site_id)
+        ga4 = get_ga4_stats([page_url], latest or date.today(), site_id) if latest else {}
+        advice["ga4"] = ga4.get(page_url)
+    except Exception:
+        advice["ga4"] = None
+
     return advice
 
 
