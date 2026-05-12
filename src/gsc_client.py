@@ -66,6 +66,42 @@ def fetch_page_stats(
     return results
 
 
+def fetch_top_queries(
+    site_url: str,
+    start_date: date,
+    end_date: date,
+    url_prefix: str = "",
+    row_limit: int = 1000,
+) -> list[dict]:
+    """GSCからクエリ単位の検索統計を取得する。"""
+    service = _build_service()
+    body: dict = {
+        "startDate": start_date.isoformat(),
+        "endDate":   end_date.isoformat(),
+        "dimensions": ["query"],
+        "rowLimit":   row_limit,
+    }
+    if url_prefix:
+        body["dimensionFilterGroups"] = [{
+            "filters": [{
+                "dimension": "page",
+                "operator": "contains",
+                "expression": url_prefix,
+            }]
+        }]
+    resp = service.searchanalytics().query(siteUrl=site_url, body=body).execute()
+    return [
+        {
+            "query":       r["keys"][0],
+            "impressions": int(r.get("impressions", 0)),
+            "clicks":      int(r.get("clicks", 0)),
+            "ctr":         round(float(r.get("ctr", 0)) * 100, 2),
+            "position":    round(float(r.get("position", 0)), 1),
+        }
+        for r in resp.get("rows", [])
+    ]
+
+
 def fetch_last_week_stats(site_url: str, url_prefix: str) -> tuple[date, date, list[dict]]:
     """直近完了かつGSCに反映済みの週データを取得する。
 

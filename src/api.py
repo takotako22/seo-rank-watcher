@@ -645,6 +645,65 @@ def api_run_debug():
         return JSONResponse({"status": "error", "error": str(e), "traceback": traceback.format_exc(), "log": log_buffer.getvalue()}, status_code=500)
 
 
+# ── キーワード分析 ────────────────────────────────────────────────────────────
+
+# 植物・園芸系キーワードのフィルタワード
+_PLANT_WORDS = {
+    "植物","花","草","木","樹","葉","実","根","球根","種","苗","鉢",
+    "観葉","多肉","サボテン","バラ","ひまわり","チューリップ","桜","さくら",
+    "紫陽花","あじさい","朝顔","あさがお","菊","きく","蘭","らん","胡蝶蘭",
+    "ポトス","モンステラ","パキラ","ドラセナ","ユッカ","フィカス","アイビー",
+    "ガジュマル","スパティフィラム","サンスベリア","カランコエ","ハイドランジア",
+    "ラベンダー","ローズマリー","ミント","バジル","シソ","ハーブ","野菜","果物",
+    "トマト","きゅうり","なす","ピーマン","いちご","ブルーベリー","レモン",
+    "育て方","栽培","水やり","肥料","剪定","植え替え","種まき","挿し木","増やし方",
+    "枯れ","枯らさ","病気","害虫","虫","日当たり","日陰","室内","屋外","ベランダ",
+    "花壇","プランター","ガーデン","庭","土","腐葉土","緑","グリーン",
+}
+
+def _is_plant_keyword(query: str) -> bool:
+    return any(w in query for w in _PLANT_WORDS)
+
+
+@app.get("/api/keywords/top")
+def api_keywords_top(
+    site_id: int = 1,
+    days: int = 28,
+    limit: int = 50,
+    filter_plant: bool = True,
+):
+    """GSCから上位クエリを取得する。filter_plant=true で植物・園芸系に絞り込む。"""
+    site = _get_site_or_404(site_id)
+    from .gsc_client import fetch_top_queries
+
+    end_date   = date.today() - timedelta(days=3)
+    start_date = end_date - timedelta(days=days - 1)
+
+    try:
+        # 絞り込み用に多めに取得
+        rows = fetch_top_queries(
+            site["gsc_site_url"],
+            start_date,
+            end_date,
+            url_prefix=site["url_prefix"],
+            row_limit=2000,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if filter_plant:
+        rows = [r for r in rows if _is_plant_keyword(r["query"])]
+
+    # 表示回数降順で上位 limit 件
+    rows.sort(key=lambda r: r["impressions"], reverse=True)
+    return {
+        "site":       site["name"],
+        "period":     f"{start_date} 〜 {end_date}",
+        "total":      len(rows),
+        "keywords":   rows[:limit],
+    }
+
+
 # ── 診断 ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/migrate")
