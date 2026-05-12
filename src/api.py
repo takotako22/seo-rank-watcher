@@ -642,6 +642,17 @@ def api_run_debug():
 
 # ── 診断 ──────────────────────────────────────────────────────────────────────
 
+@app.get("/api/migrate")
+def api_migrate():
+    """マイグレーションを手動実行する。"""
+    from .db import run_migrations
+    try:
+        run_migrations()
+        return {"status": "ok", "message": "マイグレーション完了"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+
+
 @app.get("/api/health")
 def api_health():
     try:
