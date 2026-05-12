@@ -160,10 +160,15 @@ def api_summary(site_id: int = 1):
     alerts     = analyze(yoy_pairs, latest, peak_map)
     summary    = build_summary(yoy_pairs)
 
+    from .title_fetcher import get_titles
+    all_alert_urls = [a.page_url for a in alerts["critical"] + alerts["warning"] + alerts["watch"]]
+    titles = get_titles(all_alert_urls, site_id)
+
     def fmt(a):
+        default_label = a.page_url.replace(site["url_prefix"], "").strip("/")
         return {
             "page_url": a.page_url,
-            "label": a.page_url.replace(site["url_prefix"], "").strip("/"),
+            "label": titles.get(a.page_url, default_label),
             "cur_position": a.cur_position,
             "prev_position": a.prev_position,
             "position_diff": round(a.position_diff, 1),
