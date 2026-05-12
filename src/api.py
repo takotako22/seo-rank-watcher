@@ -334,6 +334,109 @@ def api_backfill_status(site_id: int = 1):
     return {"saved_weeks": row[0], "oldest_date": str(row[1]) if row[1] else None, "newest_date": str(row[2]) if row[2] else None, "total_rows": row[3]}
 
 
+# ── トラフィック ──────────────────────────────────────────────────────────────
+
+@app.get("/api/traffic")
+def api_traffic(site_id: int = 1, limit: int = 50):
+    """GA4セッション数 Top N 記事と前週比・GSC順位を返す。"""
+    site = _get_site_or_404(site_id)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # 最新GA4日付
+            cur.execute(
+                "SELECT MAX(snapshot_date) FROM ga4_snapshots WHERE site_id = %s",
+                (site_id,),
+            )
+            latest_ga4 = cur.fetchone()[0]
+            if not latest_ga4:
+                return {"snapshot_date": None, "prev_date": None, "articles": []}
+
+            # 約4週前のGA4日付
+            cur.execute(
+                """
+                SELECT snapshot_date FROM ga4_snapshots
+                WHERE site_id = %s AND snapshot_date <= %s - INTERVAL '3 weeks'
+                  AND page_url LIKE %s
+                ORDER BY snapshot_date DESC LIMIT 1
+                """,
+                (site_id, latest_ga4, f"{site['url_prefix']}%"),
+            )
+            row = cur.fetchone()
+            prev_ga4 = row[0] if row else None
+
+            # 最新GSC日付（GA4日付に最も近いもの）
+            cur.execute(
+                "SELECT MAX(snapshot_date) FROM rank_snapshots WHERE site_id = %s AND snapshot_date <= %s",
+                (site_id, latest_ga4),
+            )
+            latest_gsc = cur.fetchone()[0]
+
+            # Top N 記事を取得（セッション降順）
+            cur.execute(
+                """
+                SELECT
+                    g.page_url,
+                    g.sessions          AS cur_sessions,
+                    g.pageviews         AS cur_pageviews,
+                    g.engagement_rate,
+                    g.avg_engagement_time_sec,
+                    gp.sessions         AS prev_sessions,
+                    r.avg_position      AS cur_position
+                FROM ga4_snapshots g
+                LEFT JOIN ga4_snapshots gp
+                    ON gp.page_url = g.page_url AND gp.site_id = g.site_id
+                    AND gp.snapshot_date = %s
+                LEFT JOIN rank_snapshots r
+                    ON r.page_url = g.page_url AND r.site_id = g.site_id
+                    AND r.snapshot_date = %s
+                WHERE g.site_id = %s
+                  AND g.snapshot_date = %s
+                  AND g.page_url LIKE %s
+                ORDER BY g.sessions DESC
+                LIMIT %s
+                """,
+                (prev_ga4, latest_gsc, site_id, latest_ga4, f"{site['url_prefix']}%", limit),
+            )
+            rows = cur.fetchall()
+
+    # タイトル取得
+    from .title_fetcher import get_titles
+    page_urls = [r[0] for r in rows]
+    titles    = get_titles(page_urls, site_id)
+
+    articles = []
+    for r in rows:
+        page_url, cur_s, cur_pv, eng_rate, avg_time, prev_s, cur_pos = r
+        cur_s  = int(cur_s  or 0)
+        prev_s = int(prev_s or 0) if prev_s is not None else None
+
+        if prev_s is not None and prev_s > 0:
+            change_rate = round((cur_s - prev_s) / prev_s * 100, 1)
+        elif prev_s == 0 and cur_s > 0:
+            change_rate = 100.0
+        else:
+            change_rate = None
+
+        articles.append({
+            "page_url":               page_url,
+            "label":                  titles.get(page_url, page_url.rstrip("/").split("/")[-1]),
+            "cur_sessions":           cur_s,
+            "prev_sessions":          prev_s,
+            "session_change_rate":    change_rate,
+            "cur_pageviews":          int(cur_pv or 0),
+            "engagement_rate":        round(float(eng_rate or 0) * 100, 1),
+            "avg_engagement_time_sec": round(float(avg_time or 0), 1),
+            "cur_position":           round(float(cur_pos), 1) if cur_pos else None,
+        })
+
+    return {
+        "snapshot_date": str(latest_ga4),
+        "prev_date":     str(prev_ga4) if prev_ga4 else None,
+        "articles":      articles,
+    }
+
+
 # ── GA4 バックフィル ──────────────────────────────────────────────────────────
 
 @app.get("/api/ga4/backfill")

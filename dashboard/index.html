@@ -40,8 +40,9 @@
     </div>
   </div>
   <nav class="flex flex-col gap-1 text-sm text-gray-600">
-    <a href="#top"     class="sidebar-link active flex items-center gap-2 px-3 py-2">📊 ダッシュボード</a>
+    <a href="#top"      class="sidebar-link active flex items-center gap-2 px-3 py-2">📊 ダッシュボード</a>
     <a href="#alerts"  class="sidebar-link flex items-center gap-2 px-3 py-2">🔴 要対策記事</a>
+    <a href="#traffic" class="sidebar-link flex items-center gap-2 px-3 py-2">🚦 トラフィック</a>
     <a href="#trend"   class="sidebar-link flex items-center gap-2 px-3 py-2">📈 順位トレンド</a>
     <a href="#recs"    class="sidebar-link flex items-center gap-2 px-3 py-2">✍️ 記事レコメンド</a>
     <a href="#season"  class="sidebar-link flex items-center gap-2 px-3 py-2">🗓️ シーズン</a>
@@ -162,6 +163,54 @@
       <div class="skeleton h-10 w-full rounded-lg"></div>
       <div class="skeleton h-10 w-full rounded-lg"></div>
       <div class="skeleton h-10 w-full rounded-lg"></div>
+    </div>
+  </div>
+
+  <!-- Traffic Top50 -->
+  <div class="card p-5 mb-6" id="traffic">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="font-semibold text-gray-800">🚦 トラフィック Top記事（GA4セッション数）</h2>
+        <p class="text-xs text-gray-500 mt-0.5" id="traffic-period">読み込み中...</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <select id="traffic-limit" onchange="loadTraffic()"
+          class="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600">
+          <option value="20">Top 20</option>
+          <option value="50" selected>Top 50</option>
+          <option value="100">Top 100</option>
+        </select>
+        <div class="flex gap-2 text-xs text-gray-400">
+          <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-green-400"></span>増加</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-full bg-red-400"></span>減少</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- GA4未設定時メッセージ -->
+    <div id="traffic-no-data" class="hidden text-center py-10 text-sm text-gray-400">
+      GA4データがありません。<br>
+      ⚙️ サイト管理でGA4プロパティIDを設定し、<code class="bg-gray-100 px-1 rounded">/api/ga4/backfill</code> を実行してください。
+    </div>
+
+    <!-- テーブル -->
+    <div id="traffic-table-wrap">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-gray-400 border-b border-gray-100">
+            <th class="text-left pb-2 font-normal w-8">#</th>
+            <th class="text-left pb-2 font-normal">記事</th>
+            <th class="text-right pb-2 font-normal w-24">セッション</th>
+            <th class="text-right pb-2 font-normal w-20">前週比</th>
+            <th class="text-right pb-2 font-normal w-16">エンゲージ</th>
+            <th class="text-right pb-2 font-normal w-16">読了時間</th>
+            <th class="text-right pb-2 font-normal w-16">GSC順位</th>
+          </tr>
+        </thead>
+        <tbody id="traffic-tbody" class="divide-y divide-gray-50">
+          <tr><td colspan="7" class="py-3 text-center text-xs text-gray-300">読み込み中...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -540,6 +589,84 @@ function renderRecTab(tab) {
   }).join('');
 }
 
+async function loadTraffic() {
+  const limit = document.getElementById('traffic-limit').value;
+  const res = await fetch(`/api/traffic?site_id=${currentSiteId}&limit=${limit}`);
+  if (!res.ok) return;
+  const data = await res.json();
+
+  const noData  = document.getElementById('traffic-no-data');
+  const wrap    = document.getElementById('traffic-table-wrap');
+  const tbody   = document.getElementById('traffic-tbody');
+  const periodEl = document.getElementById('traffic-period');
+
+  if (!data.snapshot_date || data.articles.length === 0) {
+    noData.classList.remove('hidden');
+    wrap.classList.add('hidden');
+    periodEl.textContent = 'GA4データなし';
+    return;
+  }
+
+  noData.classList.add('hidden');
+  wrap.classList.remove('hidden');
+
+  const prevLabel = data.prev_date ? `前週比（${data.prev_date}週→${data.snapshot_date}週）` : `${data.snapshot_date}週`;
+  periodEl.textContent = prevLabel;
+
+  tbody.innerHTML = data.articles.map((a, i) => {
+    // 前週比バッジ
+    let changeBadge = '<span class="text-gray-300">—</span>';
+    if (a.session_change_rate !== null) {
+      const r = a.session_change_rate;
+      if (r >= 5) {
+        changeBadge = `<span class="text-green-600 font-medium">+${r}%</span>`;
+      } else if (r <= -5) {
+        changeBadge = `<span class="text-red-500 font-medium">${r}%</span>`;
+      } else {
+        changeBadge = `<span class="text-gray-400">${r > 0 ? '+' : ''}${r}%</span>`;
+      }
+    }
+
+    // エンゲージメント色
+    const eng = a.engagement_rate;
+    const engColor = eng >= 60 ? 'text-green-600' : eng >= 40 ? 'text-yellow-600' : 'text-red-500';
+
+    // 読了時間
+    const sec = a.avg_engagement_time_sec;
+    const timeStr = sec >= 60
+      ? `${Math.floor(sec / 60)}分${Math.round(sec % 60)}秒`
+      : `${Math.round(sec)}秒`;
+    const timeColor = sec >= 60 ? 'text-green-600' : sec >= 30 ? 'text-yellow-600' : 'text-red-400';
+
+    // GSC順位
+    const posStr = a.cur_position !== null
+      ? `<span class="${a.cur_position <= 5 ? 'text-green-600' : a.cur_position <= 10 ? 'text-yellow-600' : 'text-gray-500'}">${a.cur_position}位</span>`
+      : '<span class="text-gray-300">—</span>';
+
+    // 行の背景（増減で薄く色付け）
+    let rowBg = '';
+    if (a.session_change_rate !== null) {
+      if (a.session_change_rate >= 10) rowBg = 'bg-green-50';
+      else if (a.session_change_rate <= -10) rowBg = 'bg-red-50';
+    }
+
+    return `
+      <tr class="${rowBg} hover:bg-gray-50 transition-colors">
+        <td class="py-2 pr-2 text-gray-300 text-xs">${i + 1}</td>
+        <td class="py-2 pr-3 max-w-0" style="width:42%">
+          <a href="${a.page_url}" target="_blank"
+             class="text-gray-800 hover:underline hover:text-green-600 truncate block text-xs font-medium"
+             title="${a.label}">${a.label}</a>
+        </td>
+        <td class="py-2 text-right text-gray-700 font-medium tabular-nums">${a.cur_sessions.toLocaleString()}</td>
+        <td class="py-2 text-right tabular-nums">${changeBadge}</td>
+        <td class="py-2 text-right ${engColor} tabular-nums">${eng}%</td>
+        <td class="py-2 text-right ${timeColor} tabular-nums text-xs">${timeStr}</td>
+        <td class="py-2 text-right">${posStr}</td>
+      </tr>`;
+  }).join('');
+}
+
 async function loadTrend() {
   const weeks = document.getElementById('weeks-select').value;
   const res = await fetch(`/api/trend?site_id=${currentSiteId}&weeks=${weeks}`);
@@ -839,6 +966,7 @@ async function deleteSite(id) {
 function loadAll() {
   loadSummary();
   loadSeason();
+  loadTraffic();
   loadRecommendations();
   loadTrend();
 }
