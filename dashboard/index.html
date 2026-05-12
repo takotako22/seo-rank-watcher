@@ -105,6 +105,10 @@
       <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/><line x1="16" y1="2" x2="16" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="8" y1="2" x2="8" y2="6" stroke-linecap="round" stroke-width="2"/><line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/></svg>
       シーズン
     </a>
+    <a href="#keywords" class="sidebar-link flex items-center gap-3 px-3 py-2.5">
+      <svg class="nav-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+      キーワード
+    </a>
   </nav>
 
   <div class="px-3 py-3 border-t border-slate-800">
@@ -304,6 +308,50 @@
           </thead>
           <tbody id="traffic-tbody">
             <tr><td colspan="7" class="py-6 text-center text-xs text-slate-300">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Keywords -->
+    <div class="card p-5 mb-5" id="keywords">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="font-semibold text-slate-800 text-sm">人気キーワード <span class="text-slate-400 font-normal">GSC 流入クエリ</span></h2>
+          <p class="text-xs text-slate-400 mt-0.5" id="kw-period">読み込み中...</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+            <input type="checkbox" id="kw-filter-plant" checked onchange="loadKeywords()"
+              class="rounded border-slate-300 text-green-600 focus:ring-green-500/20">
+            植物・園芸系のみ
+          </label>
+          <select id="kw-days" onchange="loadKeywords()"
+            class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+            <option value="28">直近28日</option>
+            <option value="90">直近90日</option>
+          </select>
+          <select id="kw-limit" onchange="loadKeywords()"
+            class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400">
+            <option value="50" selected>Top 50</option>
+            <option value="100">Top 100</option>
+          </select>
+        </div>
+      </div>
+      <div id="kw-content">
+        <table class="w-full data-table">
+          <thead>
+            <tr>
+              <th class="text-left w-8">#</th>
+              <th class="text-left">キーワード</th>
+              <th class="text-right w-28">表示回数</th>
+              <th class="text-right w-20">クリック</th>
+              <th class="text-right w-16">CTR</th>
+              <th class="text-right w-20">平均順位</th>
+            </tr>
+          </thead>
+          <tbody id="kw-tbody">
+            <tr><td colspan="6" class="py-6 text-center text-xs text-slate-300">読み込み中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1048,6 +1096,53 @@ async function deleteSite(id) {
   loadAll();
 }
 
+// ── キーワード ─────────────────────────────────────────────────────────────
+
+async function loadKeywords() {
+  const days        = document.getElementById('kw-days').value;
+  const limit       = document.getElementById('kw-limit').value;
+  const filterPlant = document.getElementById('kw-filter-plant').checked;
+  const tbody       = document.getElementById('kw-tbody');
+  const periodEl    = document.getElementById('kw-period');
+
+  tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-xs text-slate-300"><span class="spinning inline-block mr-1">↻</span> 取得中...</td></tr>';
+
+  try {
+    const res = await fetch(`/api/keywords/top?site_id=${currentSiteId}&days=${days}&limit=${limit}&filter_plant=${filterPlant}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    periodEl.textContent = `${data.period}（${data.total}件）`;
+
+    if (!data.keywords || data.keywords.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-xs text-slate-400">キーワードデータがありません</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.keywords.map((k, i) => {
+      const posColor = k.position <= 3 ? 'text-emerald-600 font-semibold'
+                     : k.position <= 10 ? 'text-amber-600'
+                     : 'text-slate-400';
+      const ctrColor = k.ctr >= 10 ? 'text-emerald-600'
+                     : k.ctr >= 5  ? 'text-amber-600'
+                     : 'text-slate-400';
+      return `
+        <tr>
+          <td class="py-2.5 pr-2 text-slate-300 text-xs font-medium">${i + 1}</td>
+          <td class="py-2.5 pr-4">
+            <span class="text-sm font-medium text-slate-700">${k.query}</span>
+          </td>
+          <td class="py-2.5 text-right text-slate-700 font-semibold tabular-nums">${k.impressions.toLocaleString()}</td>
+          <td class="py-2.5 text-right text-slate-500 tabular-nums">${k.clicks.toLocaleString()}</td>
+          <td class="py-2.5 text-right ${ctrColor} tabular-nums text-sm">${k.ctr}%</td>
+          <td class="py-2.5 text-right ${posColor} tabular-nums text-sm">${k.position}位</td>
+        </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-xs text-red-400">取得エラー: ${e.message}</td></tr>`;
+  }
+}
+
 // ── 初期化 ────────────────────────────────────────────────────────────────
 
 function loadAll() {
@@ -1055,6 +1150,7 @@ function loadAll() {
   loadSeason();
   loadTraffic();
   loadRecommendations();
+  loadKeywords();
   loadTrend();
 }
 
