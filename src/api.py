@@ -162,7 +162,8 @@ def api_summary(site_id: int = 1):
 
     from .title_fetcher import get_titles
     all_alert_urls = [a.page_url for a in alerts["critical"] + alerts["warning"] + alerts["watch"]]
-    titles = get_titles(all_alert_urls, site_id)
+    top_urls = [a["page_url"] for a in summary.get("top_articles", [])]
+    titles = get_titles(list(set(all_alert_urls + top_urls)), site_id)
 
     def fmt(a):
         default_label = a.page_url.replace(site["url_prefix"], "").strip("/")
@@ -176,6 +177,10 @@ def api_summary(site_id: int = 1):
             "impression_change_rate": round(a.impression_change_rate * 100, 1),
             "estimated_pv_loss": a.estimated_pv_loss,
         }
+
+    for a in summary.get("top_articles", []):
+        default = a["page_url"].replace(site["url_prefix"], "").strip("/")
+        a["label"] = titles.get(a["page_url"], default)
 
     return {
         "snapshot_date": str(latest),

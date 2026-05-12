@@ -135,6 +135,7 @@ def build_summary(yoy_pairs: list[dict]) -> dict:
             "prev_position": prev_pos,
             "position_diff": diff,
             "cur_impressions": int(p["cur_impressions"] or 0),
+            "cur_clicks": int(p.get("cur_clicks") or 0),
         })
 
     return {

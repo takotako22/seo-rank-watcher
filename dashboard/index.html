@@ -796,15 +796,23 @@ async function loadSummary() {
 
   // Top5
   const top5 = (s.top_articles || []).slice(0, 5);
-  document.getElementById('top5-list').innerHTML = top5.map((a, i) => `
-    <div class="flex items-center gap-3">
+  document.getElementById('top5-list').innerHTML = top5.map((a, i) => {
+    const posColor = a.cur_position <= 3 ? 'text-emerald-600 font-bold'
+                   : a.cur_position <= 10 ? 'text-amber-600 font-semibold'
+                   : 'text-slate-400';
+    return `
+    <div class="flex items-center gap-2.5">
       <span class="text-xs font-bold text-slate-300 w-4 shrink-0">${i + 1}</span>
       <div class="flex-1 min-w-0">
-        <div class="text-xs font-medium text-slate-700 truncate">${shortLabel(a.page_url)}</div>
-        <div class="text-xs text-slate-400">${a.cur_impressions.toLocaleString()} 回</div>
+        <a href="${a.page_url}" target="_blank"
+           class="text-xs font-medium text-slate-700 hover:text-green-600 truncate block leading-snug">${a.label || shortLabel(a.page_url)}</a>
+        <div class="flex items-center gap-2 mt-0.5">
+          <span class="text-xs text-slate-400">${(a.cur_clicks || 0).toLocaleString()} クリック</span>
+          <span class="text-xs ${posColor}">${a.cur_position}位</span>
+        </div>
       </div>
-      ${diffLabel(a.position_diff)}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function loadSeason() {
