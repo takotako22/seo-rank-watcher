@@ -14,8 +14,8 @@ def _extract_title(html: str) -> str | None:
     m = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
     if m:
         title = m.group(1).strip()
-        # 「| GreenSnap STORE」などサイト名部分を除去
-        title = re.sub(r"\s*[\|｜\-–—]\s*GreenSnap.*$", "", title).strip()
+        # 「| GreenSnap STORE」「| Horti」などサイト名部分を除去（最後の区切り文字以降を削除）
+        title = re.sub(r"\s*[|｜]\s*[^|｜]+$", "", title).strip()
         return title or None
     return None
 
