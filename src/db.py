@@ -20,16 +20,53 @@ def get_conn():
 
 
 def run_migrations():
+    # 適用済みを記録するテーブルを作成
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    filename   TEXT PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+
     base = os.path.join(os.path.dirname(__file__), "../migrations")
     for filename in sorted(os.listdir(base)):
         if not filename.endswith(".sql"):
             continue
-        with open(os.path.join(base, filename)) as f:
-            sql = f.read()
+
+        # 適用済みならスキップ
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql)
-        print(f"migration applied: {filename}")
+                cur.execute("SELECT 1 FROM _migrations WHERE filename = %s", (filename,))
+                if cur.fetchone():
+                    print(f"migration skipped (already applied): {filename}")
+                    continue
+
+        # 未適用なら実行
+        with open(os.path.join(base, filename)) as f:
+            sql = f.read()
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql)
+                    cur.execute(
+                        "INSERT INTO _migrations (filename) VALUES (%s) ON CONFLICT DO NOTHING",
+                        (filename,),
+                    )
+            print(f"migration applied: {filename}")
+        except Exception as e:
+            # already exists 系は警告にとどめて続行、それ以外は raise
+            if "already exists" in str(e).lower():
+                print(f"migration warning (already exists, skipped): {filename} — {e}")
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO _migrations (filename) VALUES (%s) ON CONFLICT DO NOTHING",
+                            (filename,),
+                        )
+            else:
+                raise
 
 
 def upsert_snapshots(rows: list[dict], snapshot_date: date, site_id: int = 1):
