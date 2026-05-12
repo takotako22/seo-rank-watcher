@@ -455,6 +455,84 @@ def api_traffic(site_id: int = 1, limit: int = 50):
 
 # ── GA4 バックフィル ──────────────────────────────────────────────────────────
 
+@app.get("/api/ga4/debug")
+def api_ga4_debug(site_id: int = 1):
+    """GA4接続の診断エンドポイント。Internal Server Errorの原因調査に使用。"""
+    import traceback
+    result: dict = {}
+
+    # 1. サイト確認
+    site = _get_site_or_404(site_id)
+    result["site_name"]       = site["name"]
+    result["ga4_property_id"] = site.get("ga4_property_id")
+
+    # 2. テーブル存在確認
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM ga4_snapshots WHERE site_id = %s", (site_id,))
+                result["ga4_snapshots_rows"] = cur.fetchone()[0]
+        result["table_ok"] = True
+    except Exception as e:
+        result["table_ok"] = False
+        result["table_error"] = str(e)
+
+    # 3. 認証テスト
+    try:
+        from .ga4_client import _build_credentials
+        creds = _build_credentials()
+        result["auth_ok"]    = True
+        result["token_type"] = type(creds.token).__name__
+    except Exception as e:
+        result["auth_ok"]    = False
+        result["auth_error"] = str(e)
+        result["auth_trace"] = traceback.format_exc()
+        return result
+
+    # 4. GA4 API テスト呼び出し（直近7日・1件のみ）
+    if site.get("ga4_property_id"):
+        try:
+            import requests as req
+            from datetime import timedelta
+            end_d   = date.today() - timedelta(days=3)
+            start_d = end_d - timedelta(days=6)
+            from urllib.parse import urlparse
+            parsed   = urlparse(site["url_prefix"])
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            body = {
+                "dateRanges": [{"startDate": start_d.isoformat(), "endDate": end_d.isoformat()}],
+                "dimensions": [{"name": "pagePath"}],
+                "metrics":    [{"name": "sessions"}],
+                "limit": 3,
+            }
+            resp = req.post(
+                f"https://analyticsdata.googleapis.com/v1beta/properties/{site['ga4_property_id']}:runReport",
+                json=body,
+                headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+                timeout=15,
+            )
+            result["ga4_api_status"] = resp.status_code
+            if resp.ok:
+                rows = resp.json().get("rows", [])
+                result["ga4_api_ok"]      = True
+                result["sample_rows"]     = [
+                    {"path": r["dimensionValues"][0]["value"],
+                     "sessions": r["metricValues"][0]["value"]}
+                    for r in rows
+                ]
+            else:
+                result["ga4_api_ok"]    = False
+                result["ga4_api_error"] = resp.text
+        except Exception as e:
+            result["ga4_api_ok"]    = False
+            result["ga4_api_error"] = str(e)
+    else:
+        result["ga4_api_ok"] = False
+        result["ga4_api_error"] = "ga4_property_id が未設定"
+
+    return result
+
+
 @app.get("/api/ga4/backfill")
 def api_ga4_backfill(site_id: int = 1, months: int = 3, chunk: int = 4):
     """GA4の過去データを週単位で取り込む。"""
@@ -465,13 +543,16 @@ def api_ga4_backfill(site_id: int = 1, months: int = 3, chunk: int = 4):
     if not site.get("ga4_property_id"):
         raise HTTPException(status_code=400, detail="GA4 property ID が未設定です")
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT snapshot_date FROM ga4_snapshots WHERE site_id = %s GROUP BY snapshot_date",
-                (site_id,),
-            )
-            done_dates = {row[0] for row in cur.fetchall()}
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT snapshot_date FROM ga4_snapshots WHERE site_id = %s GROUP BY snapshot_date",
+                    (site_id,),
+                )
+                done_dates = {row[0] for row in cur.fetchall()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DBエラー（テーブル未存在の可能性）: {e}")
 
     today   = date.today()
     cutoff  = today - timedelta(days=3)
