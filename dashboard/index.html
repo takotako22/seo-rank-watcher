@@ -150,6 +150,33 @@
 
   <div class="px-8 py-6" id="top">
 
+    <!-- SEO Audit Panel -->
+    <div class="mb-6" id="seo-audit">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <h2 class="font-semibold text-slate-800 text-sm">SEO改善ポイント</h2>
+          <span class="text-xs bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-medium">実サイト診断</span>
+        </div>
+        <button onclick="toggleAudit()" id="audit-toggle-btn"
+          class="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
+          <svg id="audit-chevron" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+          折りたたむ
+        </button>
+      </div>
+
+      <div id="audit-body">
+        <!-- Tab bar -->
+        <div class="flex gap-0 text-sm border-b border-slate-200 mb-4" id="audit-tab-bar">
+          <button class="tab-btn active" onclick="switchAuditTab('all', this)">すべて <span class="ml-1 text-xs bg-red-100 text-red-500 px-1.5 rounded-full">9</span></button>
+          <button class="tab-btn" onclick="switchAuditTab('cwv', this)">Core Web Vitals</button>
+          <button class="tab-btn" onclick="switchAuditTab('tech', this)">技術的SEO</button>
+          <button class="tab-btn" onclick="switchAuditTab('eeat', this)">E-E-A-T</button>
+        </div>
+
+        <div id="audit-items" class="grid grid-cols-1 gap-2.5"></div>
+      </div>
+    </div>
+
     <!-- KPI Cards -->
     <div class="grid grid-cols-4 gap-4 mb-6">
       <div class="kpi-card">
@@ -520,6 +547,151 @@
 let allAlerts = { critical: [], warning: [], watch: [] };
 let trendChart = null;
 let currentSiteId = 1;
+
+// ── SEO監査データ（実サイト診断結果） ─────────────────────────────────────
+const SEO_AUDIT_ITEMS = [
+  // Core Web Vitals
+  {
+    tab: 'cwv',
+    priority: 'high',
+    category: 'CLS',
+    title: '画像にwidth/height属性が未設定',
+    detail: '記事内の画像にwidth・height属性がなく、読み込み時にレイアウトシフト（CLS）が発生します。全imgタグに実サイズを明示することで改善できます。',
+    fix: '全imgタグに width・height 属性を追加（またはCSSで aspect-ratio を指定）',
+  },
+  {
+    tab: 'cwv',
+    priority: 'high',
+    category: 'LCP',
+    title: 'ファーストビュー画像にpreloadが未設定',
+    detail: '記事のメインアイキャッチ画像に <link rel="preload" as="image"> がなく、LCP（最大コンテンツ描画）が遅延しています。',
+    fix: '<link rel="preload" as="image" href="..."> をhead内に追加し、アイキャッチ画像の優先読み込みを指示する',
+  },
+  {
+    tab: 'cwv',
+    priority: 'medium',
+    category: 'Resource',
+    title: 'srcsetによるレスポンシブ画像が未対応',
+    detail: '画像がsrcsetなしの固定URLで配信されており、モバイルでも大きいサイズの画像を読み込んでいます。',
+    fix: 'CDN（Shopify）の画像変換機能を使いsrcset + sizesを設定。WebP形式への変換も合わせて実施する',
+  },
+  // 技術的SEO
+  {
+    tab: 'tech',
+    priority: 'high',
+    category: '構造化データ',
+    title: 'FAQPageスキーマが未実装（FAQ存在確認済み）',
+    detail: '記事に「よくある質問（FAQ）」セクションが実装されているにもかかわらず、FAQPage JSON-LDが一切ありません。リッチリザルト（Googleの検索結果での展開表示）の機会を失っています。',
+    fix: '各記事のFAQセクションに FAQPage JSON-LD を追加。Googleリッチリザルトへの掲載でCTR大幅改善が期待できる',
+  },
+  {
+    tab: 'tech',
+    priority: 'high',
+    category: '構造化データ',
+    title: 'BreadcrumbListスキーマが未実装（パンくずは存在）',
+    detail: 'パンくずナビゲーションはHTMLで実装済みですが、BreadcrumbList JSON-LDがないためGoogleがリッチスニペットとして認識できません。',
+    fix: 'パンくずに対応する BreadcrumbList JSON-LD をページに追加する',
+  },
+  {
+    tab: 'tech',
+    priority: 'high',
+    category: '構造化データ',
+    title: 'Article/BlogPostingスキーマが未実装',
+    detail: '記事ページにArticleまたはBlogPosting JSON-LDがなく、Googleニュースや検索でのリッチ表示・AIOへの引用可能性を損失しています。',
+    fix: 'Article JSON-LDに headline, author, datePublished, dateModified, image を含めて実装する',
+  },
+  {
+    tab: 'tech',
+    priority: 'medium',
+    category: '画像alt属性',
+    title: 'カテゴリ画像のalt属性が「サムネイル画像」に統一',
+    detail: '全カテゴリアイコン画像のaltが「サムネイル画像」という非記述的な値です。検索エンジンが画像内容を理解できず、画像検索流入も期待できません。',
+    fix: '各画像の内容に合わせたalt属性に変更（例: 「観葉植物アイコン」「多肉植物カテゴリ」）',
+  },
+  // E-E-A-T
+  {
+    tab: 'eeat',
+    priority: 'high',
+    category: 'Experience/Expertise',
+    title: '著者・監修者情報が記事に未掲載',
+    detail: '植物・園芸の専門記事に著者名・プロフィール・監修者情報が一切ありません。YMYLに近いガーデニングカテゴリでは専門性の明示がランキングに影響します。',
+    fix: '著者プロフィールページを作成し、各記事に著者名・監修者（園芸家・農業士など資格保有者）をリンク付きで明示する',
+  },
+  {
+    tab: 'eeat',
+    priority: 'medium',
+    category: 'Trustworthiness',
+    title: '記事の更新日時が構造化データに反映されていない',
+    detail: '記事に日付表示はありますが（例: 2026/4/15）、Article JSON-LDのdateModifiedがないためGoogleが鮮度を正しく評価できません。',
+    fix: 'Article JSON-LDに datePublished と dateModified を追加。コンテンツ更新時は必ず dateModified を更新する',
+  },
+];
+
+let currentAuditTab = 'all';
+let auditCollapsed = false;
+
+function renderAuditItems(tab) {
+  const items = tab === 'all' ? SEO_AUDIT_ITEMS : SEO_AUDIT_ITEMS.filter(i => i.tab === tab);
+  const container = document.getElementById('audit-items');
+
+  const priorityMeta = {
+    high:   { label: '優先度：高', cls: 'bg-red-50 border-red-200',   badge: 'bg-red-100 text-red-600 border-red-200',   dot: 'bg-red-400' },
+    medium: { label: '優先度：中', cls: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
+    low:    { label: '優先度：低', cls: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-500 border-slate-200', dot: 'bg-slate-300' },
+  };
+
+  const tabMeta = { cwv: 'Core Web Vitals', tech: '技術的SEO', eeat: 'E-E-A-T' };
+
+  container.innerHTML = items.map(item => {
+    const p = priorityMeta[item.priority];
+    return `
+      <div class="rounded-xl border ${p.cls} p-4 cursor-pointer audit-card" onclick="this.querySelector('.audit-detail').classList.toggle('hidden')">
+        <div class="flex items-start gap-3">
+          <div class="w-2 h-2 rounded-full ${p.dot} mt-1.5 shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center flex-wrap gap-2 mb-1">
+              <span class="text-xs font-medium border ${p.badge} px-2 py-0.5 rounded-full">${p.label}</span>
+              <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">${tab === 'all' ? tabMeta[item.tab] + ' · ' : ''}${item.category}</span>
+            </div>
+            <p class="text-sm font-semibold text-slate-800">${item.title}</p>
+            <div class="audit-detail hidden mt-2 space-y-2">
+              <p class="text-xs text-slate-500 leading-relaxed">${item.detail}</p>
+              <div class="flex items-start gap-1.5 bg-white/70 rounded-lg px-3 py-2 border border-current/10">
+                <svg class="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <p class="text-xs text-green-700 leading-relaxed font-medium">${item.fix}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function switchAuditTab(tab, btn) {
+  document.querySelectorAll('#audit-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentAuditTab = tab;
+  renderAuditItems(tab);
+}
+
+function toggleAudit() {
+  const body = document.getElementById('audit-body');
+  const chevron = document.getElementById('audit-chevron');
+  const btn = document.getElementById('audit-toggle-btn');
+  auditCollapsed = !auditCollapsed;
+  if (auditCollapsed) {
+    body.classList.add('hidden');
+    chevron.style.transform = 'rotate(180deg)';
+    btn.querySelector('span') && (btn.lastChild.textContent = ' 展開する');
+  } else {
+    body.classList.remove('hidden');
+    chevron.style.transform = '';
+    btn.querySelector('span') && (btn.lastChild.textContent = ' 折りたたむ');
+  }
+}
+
+// 初期表示
+renderAuditItems('all');
 
 async function loadSites() {
   const res = await fetch('/api/sites');
