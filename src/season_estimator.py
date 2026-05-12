@@ -7,7 +7,7 @@ from .db import fetch_peak_months, upsert_article_seasons
 from .gsc_client import fetch_page_stats
 
 
-def estimate_and_save(site_url: str, url_prefix: str):
+def estimate_and_save(site_url: str, url_prefix: str, site_id: int = 1):
     """1年分の月次データを取得してピーク月を推定する。初回 or 月1回程度実行する。"""
     today = date.today()
     end_date = today - timedelta(days=3)  # GSCの反映遅延を考慮
@@ -35,5 +35,5 @@ def estimate_and_save(site_url: str, url_prefix: str):
         for url, months in monthly_impressions.items()
         if infer_peak_months(url, months)
     ]
-    upsert_article_seasons(seasons)
+    upsert_article_seasons(seasons, site_id)
     return len(seasons)
