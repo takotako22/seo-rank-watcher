@@ -190,9 +190,9 @@ def api_summary(site_id: int = 1):
 
 
 @app.get("/api/trend")
-def api_trend(site_id: int = 1, weeks: int = 12):
+def api_trend(site_id: int = 1, weeks: int = 12, top_n: int = 10):
     site = _get_site_or_404(site_id)
-    return _top_articles_trend(site_id, site["url_prefix"], weeks=weeks)
+    return _top_articles_trend(site_id, site["url_prefix"], top_n=top_n, weeks=weeks)
 
 
 @app.get("/api/season")
